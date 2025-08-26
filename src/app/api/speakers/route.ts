@@ -1,24 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getTTSConfig, getDefaultSpeakers } from '@/lib/tts-config';
 
 export async function GET(request: NextRequest) {
   try {
-    // 调用CosyVoice2 API获取说话人列表
-    const speakersResponse = await fetch('http://localhost:8000/speakers', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
+    const config = getTTSConfig();
+    
+    // 如果是CosyVoice，尝试从API获取说话人列表
+    if (config.provider === 'cosyvoice') {
+      try {
+        const speakersResponse = await fetch(`${config.apiUrl}/speakers`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+
+        if (speakersResponse.ok) {
+          const speakersData = await speakersResponse.json();
+          return NextResponse.json({
+            success: true,
+            speakers: speakersData.speakers,
+            provider: config.provider
+          });
+        }
+      } catch (error) {
+        console.warn('无法连接到CosyVoice API，使用默认说话人列表');
       }
-    });
-
-    if (!speakersResponse.ok) {
-      throw new Error(`获取说话人列表失败: ${speakersResponse.status}`);
     }
-
-    const speakersData = await speakersResponse.json();
+    
+    // 使用默认说话人列表
+    const speakers = getDefaultSpeakers(config.provider);
     
     return NextResponse.json({
       success: true,
-      speakers: speakersData.speakers
+      speakers: speakers,
+      provider: config.provider
     });
 
   } catch (error) {

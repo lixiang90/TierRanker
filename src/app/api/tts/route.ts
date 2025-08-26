@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { getTTSConfig } from '@/lib/tts-config';
+import { generateTTS } from '@/lib/tts-providers';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,41 +13,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 调用CosyVoice2 API
-    const ttsResponse = await fetch(`http://localhost:8000/tts?text=${encodeURIComponent(text)}&speaker=${encodeURIComponent(speaker)}`, {
-      method: 'POST'
-    });
+    // 获取TTS配置
+    const config = getTTSConfig();
+    console.log(`使用TTS提供商: ${config.provider}`);
 
-    if (!ttsResponse.ok) {
-      throw new Error(`TTS API调用失败: ${ttsResponse.status}`);
+    // 调用相应的TTS服务
+    const result = await generateTTS(text, speaker, config);
+
+    if (!result.success) {
+      throw new Error(result.error || 'TTS生成失败');
     }
-
-    const ttsResult = await ttsResponse.json();
-    
-    if (!ttsResult.original_audio) {
-      throw new Error('TTS API未返回音频文件路径');
-    }
-
-    // 下载生成的音频文件
-    const audioResponse = await fetch(`http://localhost:8000/download?file=${encodeURIComponent(ttsResult.original_audio)}`);
-    
-    if (!audioResponse.ok) {
-      throw new Error(`音频文件下载失败: ${audioResponse.status}`);
-    }
-
-    const audioBuffer = await audioResponse.arrayBuffer();
-    
-    // 将音频数据转换为base64
-    const base64Audio = Buffer.from(audioBuffer).toString('base64');
-    const mimeType = ttsResult.original_audio.endsWith('.mp3') ? 'audio/mp3' : 'audio/wav';
-    const audioDataUrl = `data:${mimeType};base64,${base64Audio}`;
 
     return NextResponse.json({
       success: true,
-      audioUrl: audioDataUrl,
-      duration: ttsResult.duration,
-      speaker: speaker,
-      text: text
+      audioUrl: result.audioUrl,
+      duration: result.duration,
+      speaker: result.speaker,
+      text: result.text,
+      provider: config.provider
     });
 
   } catch (error) {
