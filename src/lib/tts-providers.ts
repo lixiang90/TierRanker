@@ -135,6 +135,56 @@ export async function azureTTS(text: string, speaker: string, config: TTSConfig)
   }
 }
 
+// gTTS提供商（Google Text-to-Speech免费版）
+export async function gttsTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
+  try {
+    // gTTS使用语言代码而不是说话人
+    const lang = speaker || 'zh';
+    
+    // 构建完整的API URL
+    const baseUrl = typeof window !== 'undefined' 
+      ? window.location.origin 
+      : process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'http://localhost:3000';
+    
+    // 使用gTTS API（需要安装gtts包）
+    const response = await fetch(`${baseUrl}/api/gtts-generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text,
+        lang
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`gTTS API调用失败: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'gTTS生成失败');
+    }
+
+    return {
+      success: true,
+      audioUrl: result.audioUrl,
+      duration: result.duration,
+      speaker: lang,
+      text
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '未知错误'
+    };
+  }
+}
+
 // TTS提供商工厂函数
 export async function generateTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
   switch (config.provider) {
@@ -144,6 +194,8 @@ export async function generateTTS(text: string, speaker: string, config: TTSConf
       return openaiTTS(text, speaker, config);
     case 'azure':
       return azureTTS(text, speaker, config);
+    case 'gtts':
+      return gttsTTS(text, speaker, config);
     case 'google':
     case 'aws':
       // TODO: 实现Google和AWS TTS

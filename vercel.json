@@ -8,6 +8,9 @@
     },
     "src/app/api/tts/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/gtts-generate/route.ts": {
+      "maxDuration": 60
     }
   },
   "build": {

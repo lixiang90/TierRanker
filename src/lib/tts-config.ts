@@ -1,6 +1,6 @@
 // TTS服务配置
 export interface TTSConfig {
-  provider: 'cosyvoice' | 'openai' | 'azure' | 'google' | 'aws';
+  provider: 'cosyvoice' | 'openai' | 'azure' | 'google' | 'aws' | 'gtts';
   apiUrl?: string;
   apiKey?: string;
   region?: string;
@@ -32,7 +32,8 @@ export const DEFAULT_SPEAKERS = {
   openai: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   azure: ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural', 'zh-CN-YunjianNeural'],
   google: ['zh-CN-Standard-A', 'zh-CN-Standard-B', 'zh-CN-Standard-C'],
-  aws: ['Zhiyu']
+  aws: ['Zhiyu'],
+  gtts: ['zh', 'en', 'ja', 'ko']
 };
 
 export function getDefaultSpeakers(provider: TTSConfig['provider']): string[] {

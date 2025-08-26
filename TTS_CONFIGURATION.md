@@ -15,7 +15,26 @@ TTS_PROVIDER=cosyvoice
 TTS_API_URL=http://localhost:8000
 ```
 
-### 2. OpenAI TTS（生产环境推荐）
+### 2. gTTS（免费推荐）
+- **适用场景**：开发测试、预算有限的项目
+- **优点**：完全免费、支持多种语言、无需API密钥
+- **缺点**：音质一般、语音选择有限、需要Python环境
+
+**配置方式：**
+```bash
+TTS_PROVIDER=gtts
+```
+
+**支持的语言：**
+- `zh` - 中文
+- `en` - 英文
+- `ja` - 日文
+- `ko` - 韩文
+
+**环境要求：**
+- 需要安装Python和gTTS包：`pip install gtts`
+
+### 3. OpenAI TTS（生产环境推荐）
 - **适用场景**：生产环境、Vercel部署
 - **优点**：稳定可靠、支持多种语言、API简单
 - **缺点**：按使用量付费
@@ -34,7 +53,7 @@ OPENAI_API_KEY=your_openai_api_key
 - `nova` - 年轻女声
 - `shimmer` - 温和女声
 
-### 3. Azure TTS
+### 4. Azure TTS
 - **适用场景**：企业环境、需要高度定制
 - **优点**：支持SSML、丰富的中文说话人
 - **缺点**：配置复杂、需要Azure账户

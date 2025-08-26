@@ -88,20 +88,26 @@ TTS_API_URL=http://localhost:8000
 
 #### 生产环境推荐配置
 
-**选项1：OpenAI TTS（推荐）**
+**选项1：gTTS（免费推荐）**
+```bash
+TTS_PROVIDER=gtts
+```
+*注意：需要在Vercel环境中安装Python和gTTS包*
+
+**选项2：OpenAI TTS（付费推荐）**
 ```bash
 TTS_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-**选项2：Azure TTS**
+**选项3：Azure TTS**
 ```bash
 TTS_PROVIDER=azure
 AZURE_TTS_KEY=your_azure_subscription_key
 AZURE_TTS_REGION=your_azure_region
 ```
 
-**选项3：自定义TTS服务**
+**选项4：自定义TTS服务**
 ```bash
 TTS_PROVIDER=cosyvoice
 TTS_API_URL=https://your-tts-service.com
