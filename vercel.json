@@ -18,13 +18,7 @@
       "CANVAS_PREBUILT": "false"
     }
   },
-  "env": {
-    "TTS_PROVIDER": "@tts_provider",
-    "TTS_API_URL": "@tts_api_url",
-    "OPENAI_API_KEY": "@openai_api_key",
-    "AZURE_TTS_KEY": "@azure_tts_key",
-    "AZURE_TTS_REGION": "@azure_tts_region"
-  },
+
   "headers": [
     {
       "source": "/api/(.*)",
