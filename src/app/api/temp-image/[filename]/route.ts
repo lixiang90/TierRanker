@@ -6,6 +6,12 @@ import path from 'path';
 export const dynamic = 'force-static';
 export const revalidate = false;
 
+// 为静态导出生成参数
+export async function generateStaticParams() {
+  // 返回空数组，因为这是一个动态API路由，在静态导出时不需要预生成
+  return [];
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
