@@ -98,7 +98,8 @@ interface PlacedItem {
 
 // 配置请求体大小限制
 export const maxDuration = 300; // 5分钟超时
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
+export const revalidate = false;
 
 export async function POST(request: NextRequest) {
   try {

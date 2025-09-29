@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTTSConfig } from '@/lib/tts-config';
 import { generateTTS } from '@/lib/tts-providers';
 
+// 静态导出配置
+export const dynamic = 'force-static';
+export const revalidate = false;
+
 export async function POST(request: NextRequest) {
   try {
     const { text, speaker = 'default' } = await request.json();

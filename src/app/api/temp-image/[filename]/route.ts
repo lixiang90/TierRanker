@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
+// 静态导出配置
+export const dynamic = 'force-static';
+export const revalidate = false;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ filename: string }> }
