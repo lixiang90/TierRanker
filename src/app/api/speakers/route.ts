@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTTSConfig, getDefaultSpeakers } from '@/lib/tts-config';
 
-// 静态导出配置
-export const dynamic = 'force-static';
-export const revalidate = false;
+
 
 export async function GET(request: NextRequest) {
   try {

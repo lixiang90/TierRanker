@@ -6,9 +6,7 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
-// 静态导出配置
-export const dynamic = 'force-static';
-export const revalidate = false;
+
 
 export async function POST(request: NextRequest) {
   try {
