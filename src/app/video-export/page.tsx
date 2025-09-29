@@ -52,13 +52,17 @@ export default function VideoExportPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [useTTS, setUseTTS] = useState(false);
+  const [audioMode, setAudioMode] = useState<'record' | 'tts' | 'upload'>('record');
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [selectedSpeaker, setSelectedSpeaker] = useState('default');
   const [previewMode, setPreviewMode] = useState<'blank' | 'current' | 'complete'>('blank');
   const [title, setTitle] = useState('从夯到拉排行榜');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editingTitle, setEditingTitle] = useState('从夯到拉排行榜');
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [batchOverwrite, setBatchOverwrite] = useState(false);
 
   // 从localStorage加载标题
   useEffect(() => {
@@ -299,10 +303,59 @@ export default function VideoExportPage() {
     }
   };
 
-  const generateTTS = async (text: string, sectionIndex: number) => {
+  const handleAudioUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // 检查文件类型
+    if (!file.type.startsWith('audio/')) {
+      alert('请选择音频文件');
+      return;
+    }
+    
+    // 检查文件大小（限制为50MB）
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSize) {
+      alert('文件大小不能超过50MB');
+      return;
+    }
+    
+    const audioUrl = URL.createObjectURL(file);
+    
+    // 创建音频元素来获取时长
+    const audio = new Audio(audioUrl);
+    audio.onloadedmetadata = () => {
+      const duration = audio.duration;
+      
+      setAudioSections(prev => prev.map((section, index) => 
+        index === currentSection 
+          ? { 
+              ...section, 
+              audioBlob: file,
+              audioUrl,
+              duration: duration || section.duration
+            }
+          : section
+      ));
+      
+      console.log('音频文件上传成功，时长:', duration, '秒');
+    };
+    
+    audio.onerror = () => {
+      alert('音频文件格式不支持或文件损坏');
+      URL.revokeObjectURL(audioUrl);
+    };
+    
+    // 清空input值，允许重复选择同一文件
+    event.target.value = '';
+  };
+
+  const generateTTS = async (text: string, sectionIndex: number, isBatch: boolean = false) => {
     try {
       if (!text.trim()) {
-        alert('请输入要转换的文本内容');
+        if (!isBatch) {
+          alert('请输入要转换的文本内容');
+        }
         return;
       }
 
@@ -352,11 +405,77 @@ export default function VideoExportPage() {
       ));
       
       console.log('TTS音频生成完成，时长:', result.duration, '秒');
-      alert('TTS音频生成成功！');
+      // 只在非批量生成模式下显示成功提示
+      if (!isBatch) {
+        alert('TTS音频生成成功！');
+      }
       
     } catch (error) {
       console.error('TTS generation failed:', error);
-      alert(`TTS生成失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      if (!isBatch) {
+        alert(`TTS生成失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      }
+      throw error;
+    }
+  };
+
+  const generateAllTTS = async () => {
+    setShowBatchModal(false); // 关闭弹窗
+    setBatchGenerating(true);
+    setBatchProgress({ current: 0, total: audioSections.length });
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+    
+    try {
+      for (let i = 0; i < audioSections.length; i++) {
+        const section = audioSections[i];
+        
+        // 如果已有音频且不覆盖，则跳过
+        if (section.audioUrl && !batchOverwrite) {
+          setBatchProgress({ current: i + 1, total: audioSections.length });
+          continue;
+        }
+        
+        // 如果文本为空，跳过
+        if (!section.text.trim()) {
+          setBatchProgress({ current: i + 1, total: audioSections.length });
+          continue;
+        }
+        
+        try {
+          await generateTTS(section.text, i, true); // 传入isBatch=true
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push(`段落 ${i + 1}: ${error instanceof Error ? error.message : '未知错误'}`);
+        }
+        
+        setBatchProgress({ current: i + 1, total: audioSections.length });
+        
+        // 添加短暂延迟避免API请求过于频繁
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // 显示结果（仅在有错误时显示详细信息）
+      if (errorCount > 0) {
+        let message = `批量生成完成！\n成功: ${successCount} 个，失败: ${errorCount} 个`;
+        if (errors.length > 0) {
+          message += `\n错误详情:\n${errors.slice(0, 3).join('\n')}`;
+          if (errors.length > 3) {
+            message += `\n... 还有 ${errors.length - 3} 个错误`;
+          }
+        }
+        alert(message);
+      }
+      
+    } catch (error) {
+      console.error('批量生成过程中发生错误:', error);
+      alert('批量生成过程中发生错误，请重试');
+    } finally {
+      setBatchGenerating(false);
+      setBatchProgress({ current: 0, total: 0 });
     }
   };
 
@@ -805,12 +924,12 @@ export default function VideoExportPage() {
             
             {/* 音频模式选择 */}
             <div className="mb-6">
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-4 flex-wrap">
                 <label className="flex items-center">
                   <input
                     type="radio"
-                    checked={!useTTS}
-                    onChange={() => setUseTTS(false)}
+                    checked={audioMode === 'record'}
+                    onChange={() => setAudioMode('record')}
                     className="mr-2"
                   />
                   <MicrophoneIcon className="w-5 h-5 mr-1" />
@@ -819,12 +938,24 @@ export default function VideoExportPage() {
                 <label className="flex items-center">
                   <input
                     type="radio"
-                    checked={useTTS}
-                    onChange={() => setUseTTS(true)}
+                    checked={audioMode === 'tts'}
+                    onChange={() => setAudioMode('tts')}
                     className="mr-2"
                   />
                   <SpeakerWaveIcon className="w-5 h-5 mr-1" />
                   TTS语音合成
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    checked={audioMode === 'upload'}
+                    onChange={() => setAudioMode('upload')}
+                    className="mr-2"
+                  />
+                  <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  上传音频
                 </label>
               </div>
             </div>
@@ -852,7 +983,7 @@ export default function VideoExportPage() {
 
             {/* 录制控制 */}
             <div className="flex items-center space-x-4 mb-6">
-              {!useTTS ? (
+              {audioMode === 'record' ? (
                 <>
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
@@ -875,7 +1006,7 @@ export default function VideoExportPage() {
                     )}
                   </button>
                 </>
-              ) : (
+              ) : audioMode === 'tts' ? (
                 <div className="flex items-center space-x-4">
                   {/* 说话人选择下拉列表 */}
                   <div className="flex flex-col">
@@ -904,6 +1035,34 @@ export default function VideoExportPage() {
                     <SpeakerWaveIcon className="w-5 h-5" />
                     <span>生成语音</span>
                   </button>
+                  
+                  <button
+                    onClick={() => setShowBatchModal(true)}
+                    disabled={batchGenerating}
+                    className="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600 disabled:bg-gray-400 flex items-center space-x-2"
+                  >
+                    <SpeakerWaveIcon className="w-5 h-5" />
+                    <span>一键生成全部</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-4">
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleAudioUpload}
+                    className="hidden"
+                    id="audio-upload"
+                  />
+                  <label
+                    htmlFor="audio-upload"
+                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 cursor-pointer flex items-center space-x-2"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <span>选择音频文件</span>
+                  </label>
                 </div>
               )}
               
@@ -917,6 +1076,22 @@ export default function VideoExportPage() {
                 </button>
               )}
             </div>
+
+            {/* 批量生成进度 */}
+            {batchGenerating && (
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-800">正在批量生成语音...</span>
+                  <span className="text-sm text-blue-600">{batchProgress.current} / {batchProgress.total}</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
 
             {/* 段落导航 */}
             <div className="flex items-center space-x-2 mb-6">
@@ -1024,7 +1199,7 @@ export default function VideoExportPage() {
             <div className="space-y-4">
               <button
                 onClick={generateVideo}
-                disabled={isGeneratingVideo || audioSections.some(s => !s.audioUrl && !s.isTTS)}
+                disabled={isGeneratingVideo || audioSections.some(s => !s.audioUrl)}
                 className="w-full px-6 py-3 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {isGeneratingVideo ? (
@@ -1040,15 +1215,73 @@ export default function VideoExportPage() {
                 )}
               </button>
               
-              {audioSections.some(s => !s.audioUrl && !s.isTTS) && (
+              {audioSections.some(s => !s.audioUrl) && (
                 <p className="text-sm text-gray-500 text-center">
-                  请先为所有段落录制音频或生成语音
-                </p>
+                    请先为所有段落录制音频、生成语音或上传音频文件
+                  </p>
               )}
             </div>
           </div>
         </div>
       </div>
+      
+      {/* 批量生成选项弹窗 */}
+      {showBatchModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">一键生成所有语音</h3>
+            
+            <div className="mb-6">
+              <p className="text-gray-600 mb-4">
+                将为所有段落生成TTS语音。请选择对已有语音的处理方式：
+              </p>
+              
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    checked={!batchOverwrite}
+                    onChange={() => setBatchOverwrite(false)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <div className="font-medium">跳过已有语音</div>
+                    <div className="text-sm text-gray-500">只为没有语音的段落生成TTS</div>
+                  </div>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    checked={batchOverwrite}
+                    onChange={() => setBatchOverwrite(true)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <div className="font-medium">覆盖所有语音</div>
+                    <div className="text-sm text-gray-500">重新生成所有段落的TTS语音</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowBatchModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={generateAllTTS}
+                className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600"
+              >
+                开始生成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <audio ref={audioRef} />
     </div>
