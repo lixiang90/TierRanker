@@ -14,7 +14,10 @@ const imageCache = new Map<string, Image>();
 async function loadImageWithCache(imageSource: string): Promise<Image> {
   // 检查缓存
   if (imageCache.has(imageSource)) {
-    return imageCache.get(imageSource);
+    const cachedImage = imageCache.get(imageSource);
+    if (cachedImage) {
+      return cachedImage;
+    }
   }
 
   let img;
@@ -70,7 +73,7 @@ interface AudioSection {
   id: string;
   type: 'intro' | 'item' | 'conclusion';
   text: string;
-  audioBlob?: Blob;
+  audioBlob?: Blob | string;
   duration: number;
   isTTS?: boolean;
 }
@@ -135,7 +138,7 @@ export async function POST(request: NextRequest) {
     // 清理图片缓存
     imageCache.clear();
     
-    return new NextResponse(videoBuffer, {
+    return new NextResponse(new Uint8Array(videoBuffer), {
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Disposition': 'attachment; filename="tier-ranking-video.mp4"',
@@ -222,7 +225,7 @@ async function generateFrames(
   }
   
   // 阶段2: 按拖拽历史顺序逐项移动动画
-  let allItems: any[] = [];
+  let allItems: (RankingItem & { tierName: string; tierColor?: string })[] = [];
   
   if (rankingData.dragHistory && rankingData.dragHistory.length > 0) {
     // 按拖拽历史顺序排列项目
@@ -496,7 +499,7 @@ async function drawMovingItemWithCenterStage(ctx: CanvasRenderingContext2D, item
   if (!tier) return;
   
   const tierIndex = tiers.findIndex(t => t.name === item.tierName);
-  const itemIndex = tier.items.findIndex((i: any) => i.id === item.id);
+  const itemIndex = tier.items.findIndex((i: RankingItem) => i.id === item.id);
   
   const tierHeight = 120;
   const tierStartY = 150;
@@ -559,7 +562,7 @@ async function drawMovingItem(ctx: CanvasRenderingContext2D, item: RankingItem &
   if (!tier) return;
   
   const tierIndex = tiers.findIndex(t => t.name === item.tierName);
-  const itemIndex = tier.items.findIndex((i: any) => i.id === item.id);
+  const itemIndex = tier.items.findIndex((i: RankingItem) => i.id === item.id);
   
   const tierHeight = 120;
   const tierStartY = 150;

@@ -51,7 +51,7 @@ export async function GET(
         break;
     }
     
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(new Uint8Array(fileBuffer), {
       headers: {
         'Content-Type': mimeType,
         'Cache-Control': 'public, max-age=3600', // 缓存1小时

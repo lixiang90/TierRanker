@@ -3,7 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   serverExternalPackages: ['canvas'],
-  output: 'export',
   trailingSlash: true,
   images: {
     unoptimized: true

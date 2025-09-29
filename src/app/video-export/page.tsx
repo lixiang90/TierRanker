@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { PlayIcon, PauseIcon, StopIcon, MicrophoneIcon, SpeakerWaveIcon, VideoCameraIcon } from '@heroicons/react/24/outline';
 
@@ -43,7 +43,7 @@ interface AudioSection {
   tierName?: string;
 }
 
-export default function VideoExportPage() {
+function VideoExportContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [rankingData, setRankingData] = useState<RankingData | null>(null);
@@ -1191,7 +1191,7 @@ export default function VideoExportPage() {
             <div className="mb-4 text-sm text-gray-600">
                当前段落: {currentSection + 1} / {audioSections.length} - {
                  audioSections[currentSection]?.type === 'intro' ? '前言' : 
-                 audioSections[currentSection]?.type === 'summary' ? '总结' : 
+                 audioSections[currentSection]?.type === 'conclusion' ? '总结' : 
                  `${audioSections[currentSection]?.itemName} - ${audioSections[currentSection]?.tierName} - 项目解说`
                }
              </div>
@@ -1285,5 +1285,13 @@ export default function VideoExportPage() {
       
       <audio ref={audioRef} />
     </div>
+  );
+}
+
+export default function VideoExportPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-lg">加载中...</div></div>}>
+      <VideoExportContent />
+    </Suspense>
   );
 }
