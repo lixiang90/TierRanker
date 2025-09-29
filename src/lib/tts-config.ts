@@ -16,7 +16,7 @@ export interface TTSResponse {
 }
 
 export function getTTSConfig(): TTSConfig {
-  const provider = (process.env.TTS_PROVIDER || 'cosyvoice') as TTSConfig['provider'];
+  const provider = (process.env.TTS_PROVIDER || 'gtts') as TTSConfig['provider'];
   
   return {
     provider,

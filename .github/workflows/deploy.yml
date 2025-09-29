@@ -27,6 +27,7 @@ jobs:
       run: npm run build
       env:
         NODE_ENV: production
+        TTS_PROVIDER: gtts
         
     - name: Create .nojekyll file
       run: |
