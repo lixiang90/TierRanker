@@ -9,6 +9,9 @@
 - **优点**：免费、高质量中文语音、支持多种说话人
 - **缺点**：需要本地部署服务
 
+**安装和启动CosyVoice API**
+详见[CosyVoice2SimpleAPI项目](https://github.com/lixiang90/CosyVoice2SimpleAPI)
+
 **配置方式：**
 ```bash
 TTS_PROVIDER=cosyvoice
