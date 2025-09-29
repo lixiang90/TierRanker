@@ -3,15 +3,15 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image } from 'canvas';
 
 const execAsync = promisify(exec);
 
 // 图片缓存，避免重复加载相同图片
-const imageCache = new Map<string, any>();
+const imageCache = new Map<string, Image>();
 
 // 带缓存的图片加载函数
-async function loadImageWithCache(imageSource: string): Promise<any> {
+async function loadImageWithCache(imageSource: string): Promise<Image> {
   // 检查缓存
   if (imageCache.has(imageSource)) {
     return imageCache.get(imageSource);
@@ -73,6 +73,24 @@ interface AudioSection {
   audioBlob?: Blob;
   duration: number;
   isTTS?: boolean;
+}
+
+interface RankingItem {
+  id: string;
+  name: string;
+  image?: string;
+}
+
+interface RankingTier {
+  id: string;
+  name: string;
+  color: string;
+  items: RankingItem[];
+}
+
+interface PlacedItem {
+  item: RankingItem & { tierName: string };
+  originalIndex: number;
 }
 
 // 配置请求体大小限制
@@ -243,8 +261,7 @@ async function generateFrames(
     
     // 计算目标位置信息
     const tier = rankingData.tiers.find(t => t.name === item.tierName);
-    const tierIndex = rankingData.tiers.findIndex(t => t.name === item.tierName);
-    const targetItemIndex = tier?.items.findIndex((i: any) => i.id === item.id) || 0;
+    const targetItemIndex = tier?.items.findIndex((i: RankingItem) => i.id === item.id) || 0;
     
     // 检查是否需要位置替换动画
     // 当新项目插入到等级中间位置时，后面的项目需要被挤压
@@ -260,7 +277,7 @@ async function generateFrames(
       
       // 绘制已放置的项目（考虑位置替换动画）
       // 按等级分组已放置的项目
-      const placedItemsByTier = new Map<string, any[]>();
+      const placedItemsByTier = new Map<string, PlacedItem[]>();
       for (let i = 0; i < itemIndex; i++) {
         const placedItem = allItems[i];
         if (!placedItemsByTier.has(placedItem.tierName)) {
@@ -313,7 +330,7 @@ async function generateFrames(
       
       // 绘制当前移动的项目
       if (needsCenterStage) {
-        await drawMovingItemWithCenterStage(ctx, item, progress, rankingData.tiers, itemDuration);
+        await drawMovingItemWithCenterStage(ctx, item, progress, rankingData.tiers);
       } else {
         await drawMovingItem(ctx, item, progress, rankingData.tiers);
       }
@@ -348,7 +365,7 @@ const colorMap: { [key: string]: string } = {
   'bg-indigo-300': '#a5b4fc'
 };
 
-function drawBlankTierStructure(ctx: any, tiers: any[]) {
+function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTier[]) {
   // 清空画布 - 使用浅灰色背景
   ctx.fillStyle = '#f3f4f6';
   ctx.fillRect(0, 0, 1920, 1080);
@@ -392,7 +409,7 @@ function drawBlankTierStructure(ctx: any, tiers: any[]) {
 
 
 
-async function drawItemInTier(ctx: any, item: any, x: number, y: number, width: number, height: number) {
+async function drawItemInTier(ctx: CanvasRenderingContext2D, item: RankingItem, x: number, y: number, width: number, height: number) {
   // 绘制项目背景
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(x, y, width, height);
@@ -460,7 +477,7 @@ async function drawItemInTier(ctx: any, item: any, x: number, y: number, width: 
   }
 }
 
-function drawDefaultItemStyle(ctx: any, item: any, x: number, y: number, width: number, height: number) {
+function drawDefaultItemStyle(ctx: CanvasRenderingContext2D, item: RankingItem, x: number, y: number, width: number, height: number) {
   // 绘制渐变背景
   const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
   gradient.addColorStop(0, '#3b82f6');
@@ -474,7 +491,7 @@ function drawDefaultItemStyle(ctx: any, item: any, x: number, y: number, width: 
   ctx.fillText(item.name, x + width / 2, y + height / 2 + 5);
 }
 
-async function drawMovingItemWithCenterStage(ctx: any, item: any, progress: number, tiers: any[], duration: number) {
+async function drawMovingItemWithCenterStage(ctx: CanvasRenderingContext2D, item: RankingItem & { tierName: string }, progress: number, tiers: RankingTier[]) {
   const tier = tiers.find(t => t.name === item.tierName);
   if (!tier) return;
   
@@ -533,7 +550,7 @@ async function drawMovingItemWithCenterStage(ctx: any, item: any, progress: numb
   await drawMovingItemContent(ctx, item, currentX - currentSize/2, currentY - currentSize/2, currentSize);
 }
 
-async function drawMovingItem(ctx: any, item: any, progress: number, tiers: any[]) {
+async function drawMovingItem(ctx: CanvasRenderingContext2D, item: RankingItem & { tierName: string }, progress: number, tiers: RankingTier[]) {
   // 简化的移动动画，从屏幕底部移动到目标位置
   const startX = 960;
   const startY = 1000;
@@ -564,7 +581,7 @@ async function drawMovingItem(ctx: any, item: any, progress: number, tiers: any[
   await drawMovingItemContent(ctx, item, currentX, currentY, 100);
 }
 
-async function drawMovingItemContent(ctx: any, item: any, x: number, y: number, size: number) {
+async function drawMovingItemContent(ctx: CanvasRenderingContext2D, item: RankingItem, x: number, y: number, size: number) {
   if (item.image) {
     try {
       // 使用缓存加载图片
@@ -625,7 +642,7 @@ async function drawMovingItemContent(ctx: any, item: any, x: number, y: number, 
   }
 }
 
-function drawMovingItemDefaultStyle(ctx: any, item: any, x: number, y: number, size: number = 100) {
+function drawMovingItemDefaultStyle(ctx: CanvasRenderingContext2D, item: RankingItem, x: number, y: number, size: number = 100) {
   // 绘制移动中的项目渐变背景
   const padding = Math.max(5, size * 0.05);
   const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
@@ -641,7 +658,7 @@ function drawMovingItemDefaultStyle(ctx: any, item: any, x: number, y: number, s
   ctx.fillText(item.name, x + size / 2, y + size / 2 + fontSize / 3);
 }
 
-async function drawCompleteTierTable(ctx: any, rankingData: RankingData) {
+async function drawCompleteTierTable(ctx: CanvasRenderingContext2D, rankingData: RankingData) {
   drawBlankTierStructure(ctx, rankingData.tiers);
   
   // 绘制所有项目在其最终位置
@@ -657,7 +674,7 @@ async function drawCompleteTierTable(ctx: any, rankingData: RankingData) {
   }
 }
 
-async function saveFrame(canvas: any, tempDir: string, frameIndex: number) {
+async function saveFrame(canvas: Canvas, tempDir: string, frameIndex: number) {
   const buffer = canvas.toBuffer('image/png');
   const framePath = path.join(tempDir, `frame_${frameIndex.toString().padStart(6, '0')}.png`);
   await fs.promises.writeFile(framePath, buffer);

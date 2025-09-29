@@ -693,7 +693,7 @@ export default function VideoExportPage() {
     if (!tier) return;
     
     const tierIndex = tiers.findIndex(t => t.name === tierName);
-    const itemIndex = tier.items.findIndex((i: any) => i.id === item.id);
+    const itemIndex = tier.items.findIndex((i: Item) => i.id === item.id);
     
     const tierHeight = 120 * scale;
     const startY = 150 * scale;
