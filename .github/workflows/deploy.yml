@@ -29,7 +29,9 @@ jobs:
         NODE_ENV: production
         
     - name: Create .nojekyll file
-      run: touch out/.nojekyll
+      run: |
+        mkdir -p out
+        touch out/.nojekyll
       
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
