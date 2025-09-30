@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- 背景 -->
+  <rect width="32" height="32" fill="#3B82F6" rx="4"/>
+  
+  <!-- 排行榜图标 -->
+  <rect x="6" y="20" width="4" height="8" fill="#FEF3C7" rx="1"/>
+  <rect x="14" y="16" width="4" height="12" fill="#FDE68A" rx="1"/>
+  <rect x="22" y="18" width="4" height="10" fill="#FCD34D" rx="1"/>
+  
+  <!-- 奖杯装饰 -->
+  <circle cx="16" cy="8" r="3" fill="#F59E0B"/>
+  <rect x="15" y="11" width="2" height="3" fill="#F59E0B"/>
+  <rect x="13" y="14" width="6" height="1" fill="#F59E0B" rx="0.5"/>
+</svg>

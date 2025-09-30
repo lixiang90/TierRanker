@@ -330,7 +330,7 @@ function TierRow({
         ) : (
           <>
             <h2 
-              className="text-xl font-bold text-gray-800 cursor-pointer hover:text-gray-600 transition-colors"
+              className="text-2xl font-bold text-gray-800 cursor-pointer hover:text-gray-600 transition-colors"
               onClick={() => onStartEdit(tier.id, tier.name)}
               title="点击编辑级别名称"
             >
