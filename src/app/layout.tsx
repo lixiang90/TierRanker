@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "从夯到拉排行榜",
   description: "一个有趣的排行榜制作工具",
   icons: {
-    icon: '/favicon.ico',
+    icon: '/favicon.svg',
   },
 };
 
