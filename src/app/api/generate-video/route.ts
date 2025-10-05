@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 // 图片缓存，避免重复加载相同图片
 const imageCache = new Map<string, Image>();
 
-// 带缓存的图片加载函数
+// 带缓存的图片加载函数（支持 base64、临时文件、本地/远程URL）
 async function loadImageWithCache(imageSource: string): Promise<Image> {
   // 检查缓存
   if (imageCache.has(imageSource)) {
@@ -20,19 +20,35 @@ async function loadImageWithCache(imageSource: string): Promise<Image> {
     }
   }
 
-  let img;
+  let img: Image;
   try {
-    if (imageSource.startsWith('http://') || imageSource.startsWith('https://') || imageSource.startsWith('/api/')) {
-      // 如果是URL，直接加载
-      const fullUrl = imageSource.startsWith('/api/') ? `http://localhost:3001${imageSource}` : imageSource;
-      img = await loadImage(fullUrl);
-    } else {
-      // 如果是base64数据，解码后加载
-      const base64Data = imageSource.replace(/^data:image\/[a-z]+;base64,/, '');
+    if (imageSource.startsWith('data:')) {
+      // 处理 data URI（base64）
+      const base64Data = imageSource.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
       const imageBuffer = Buffer.from(base64Data, 'base64');
       img = await loadImage(imageBuffer);
+    } else if (imageSource.startsWith('/api/temp-image/')) {
+      // 直接读取后端保存的临时图片文件，避免依赖 localhost 域名
+      const filename = path.basename(imageSource);
+      const filePath = path.join(process.cwd(), 'temp', 'images', filename);
+      const imageBuffer = await fs.promises.readFile(filePath);
+      img = await loadImage(imageBuffer);
+    } else if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+      // 远程或本地完整URL
+      img = await loadImage(imageSource);
+    } else {
+      // 尝试按不带前缀的base64或文件路径处理
+      if (/^[A-Za-z0-9+/=]+$/.test(imageSource)) {
+        const imageBuffer = Buffer.from(imageSource, 'base64');
+        img = await loadImage(imageBuffer);
+      } else if (fs.existsSync(imageSource)) {
+        const imageBuffer = await fs.promises.readFile(imageSource);
+        img = await loadImage(imageBuffer);
+      } else {
+        throw new Error(`Unsupported image source: ${imageSource}`);
+      }
     }
-    
+
     // 存入缓存
     imageCache.set(imageSource, img);
     return img;
