@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image } from 'canvas';
+import { getTempImagePath } from '@/lib/temp-dir';
 
 const execAsync = promisify(exec);
 
@@ -28,9 +29,9 @@ async function loadImageWithCache(imageSource: string): Promise<Image> {
       const imageBuffer = Buffer.from(base64Data, 'base64');
       img = await loadImage(imageBuffer);
     } else if (imageSource.startsWith('/api/temp-image/')) {
-      // 直接读取后端保存的临时图片文件，避免依赖 localhost 域名
+      // 直接读取后端保存的临时图片文件（兼容 Vercel 的 /tmp）
       const filename = path.basename(imageSource);
-      const filePath = path.join(process.cwd(), 'temp', 'images', filename);
+      const filePath = getTempImagePath(filename);
       const imageBuffer = await fs.promises.readFile(filePath);
       img = await loadImage(imageBuffer);
     } else if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { getTempImagesDir, getTempImagePath } from '@/lib/temp-dir';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,13 +22,13 @@ export async function POST(request: NextRequest) {
     
     // 生成唯一文件名
     const uniqueFileName = `${uuidv4()}.${extension}`;
-    
-    // 创建临时目录
-    const tempDir = path.join(process.cwd(), 'temp', 'images');
+
+    // 创建临时目录（Vercel 使用 /tmp/images，本地使用项目 temp/images）
+    const tempDir = getTempImagesDir();
     await fs.promises.mkdir(tempDir, { recursive: true });
-    
+
     // 保存图片文件
-    const filePath = path.join(tempDir, uniqueFileName);
+    const filePath = getTempImagePath(uniqueFileName);
     const buffer = Buffer.from(base64Data, 'base64');
     await fs.promises.writeFile(filePath, buffer);
     

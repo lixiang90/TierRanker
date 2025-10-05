@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getTempImagePath } from '@/lib/temp-dir';
 
 export async function GET(
   request: NextRequest,
@@ -17,8 +18,8 @@ export async function GET(
       );
     }
     
-    // 构建文件路径
-    const filePath = path.join(process.cwd(), 'temp', 'images', filename);
+    // 构建文件路径（兼容 Vercel 的 /tmp/images）
+    const filePath = getTempImagePath(filename);
     
     // 检查文件是否存在
     if (!fs.existsSync(filePath)) {
