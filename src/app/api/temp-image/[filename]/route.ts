@@ -3,12 +3,16 @@ import fs from 'fs';
 import path from 'path';
 import { getTempImagePath } from '@/lib/temp-dir';
 
+// 强制动态与 Node.js 运行时，确保在 Vercel 上可读写临时文件
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
+  { params }: { params: { filename: string } }
 ) {
   try {
-    const { filename } = await params;
+    const { filename } = params;
     
     // 验证文件名安全性
     if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
