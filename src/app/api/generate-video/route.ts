@@ -194,33 +194,40 @@ async function generateFrames(
       
       if (section.audioBlob && typeof section.audioBlob === 'string') {
         // 如果有实际音频数据，获取其时长
-        try {
-          const base64Data = section.audioBlob.split(',')[1];
-          const audioBuffer = Buffer.from(base64Data, 'base64');
-          const tempAudioPath = path.join(tempDir, `temp_duration_${index}.webm`);
-          const wavPath = path.join(tempDir, `temp_duration_${index}.wav`);
-          
-          await fs.promises.writeFile(tempAudioPath, audioBuffer);
-          
-          // 先转换为wav格式，然后获取时长（webm格式可能导致ffprobe读取不准确）
-          await execAsync(`ffmpeg -i "${tempAudioPath}" -ar 44100 -ac 2 "${wavPath}"`);
-          
-          // 使用ffprobe获取wav音频时长
-          const { stdout } = await execAsync(`ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${wavPath}"`);
-          const parsedDuration = parseFloat(stdout.trim());
-          
-          if (!isNaN(parsedDuration) && parsedDuration > 0) {
-            duration = parsedDuration;
-            console.log(`音频段落${index} (${section.type}) 实际时长: ${duration.toFixed(2)}秒`);
-          } else {
-            console.warn(`音频段落${index}时长解析失败，使用默认值${duration}秒`);
+        // 如果客户端已提供时长则跳过实测，避免无 ffprobe 环境报错
+        if (!section.duration || section.duration <= 0) {
+          try {
+            const base64Data = section.audioBlob.split(',')[1];
+            const audioBuffer = Buffer.from(base64Data, 'base64');
+            const tempAudioPath = path.join(tempDir, `temp_duration_${index}.webm`);
+            const wavPath = path.join(tempDir, `temp_duration_${index}.wav`);
+            
+            await fs.promises.writeFile(tempAudioPath, audioBuffer);
+            
+            // 先转换为wav格式，然后获取时长（webm格式可能导致ffprobe读取不准确）
+            await execAsync(`ffmpeg -i "${tempAudioPath}" -ar 44100 -ac 2 "${wavPath}"`);
+            
+            // 使用ffprobe获取wav音频时长
+            const { stdout } = await execAsync(`ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${wavPath}"`);
+            const parsedDuration = parseFloat(stdout.trim());
+            
+            if (!isNaN(parsedDuration) && parsedDuration > 0) {
+              duration = parsedDuration;
+              console.log(`音频段落${index} (${section.type}) 实际时长: ${duration.toFixed(2)}秒`);
+            } else {
+              console.warn(`音频段落${index}时长解析失败，使用默认值${duration}秒`);
+            }
+            
+            // 清理临时文件
+            await fs.promises.unlink(tempAudioPath).catch(() => {});
+            await fs.promises.unlink(wavPath).catch(() => {});
+          } catch (error) {
+            // 获取时长失败时记录日志并使用估算/默认值
+            const estimate = Math.max(2, (section.text?.length || 0) / 4);
+            const fallback = section.duration || estimate || 3.84;
+            console.warn(`获取音频${index}时长失败，使用默认值${fallback}秒:`, error);
+            duration = fallback;
           }
-          
-          // 清理临时文件
-          await fs.promises.unlink(tempAudioPath).catch(() => {});
-          await fs.promises.unlink(wavPath).catch(() => {});
-        } catch (error) {
-          console.warn(`获取音频${index}时长失败，使用默认值${duration}秒:`, error);
         }
       } else if (section.isTTS && section.text) {
         // TTS段落根据文本长度估算时长
