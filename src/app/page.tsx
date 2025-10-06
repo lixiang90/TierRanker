@@ -679,6 +679,15 @@ export default function Home() {
       image: newItemImage || undefined,
     };
     
+    // 将图片持久化到 localStorage（避免服务器临时文件）
+    try {
+      if (newItem.image) {
+        localStorage.setItem(`itemImage:${newItem.id}`, newItem.image);
+      }
+    } catch (e) {
+      console.warn('写入图片到 localStorage 失败:', e);
+    }
+
     setUnrankedItems(prev => [...prev, newItem]);
     setNewItemName('');
     setNewItemImage(null);
@@ -692,38 +701,12 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const base64Data = e.target?.result as string;
-        
+        // 直接使用 base64 数据，并写入 localStorage 以持久化
         try {
-          console.log('开始上传图片到服务器...');
-          // 立即上传图片到服务器
-          const response = await fetch('/api/upload-image', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              imageData: base64Data,
-              fileName: file.name
-            })
-          });
-          
-          if (!response.ok) {
-            throw new Error('图片上传失败');
-          }
-          
-          const result = await response.json();
-          if (!result.success) {
-            throw new Error(result.error || '图片上传失败');
-          }
-          
-          // 使用服务器返回的URL而不是base64数据
-          setNewItemImage(result.imageUrl);
-          console.log('图片上传成功:', result.imageUrl);
-          
-        } catch (error) {
-          console.error('图片上传失败:', error);
-          alert('图片上传失败，请重试');
-          // 如果上传失败，仍然使用base64作为备用
+          setNewItemImage(base64Data);
+          localStorage.setItem('lastUploadedImage', base64Data);
+        } catch (err) {
+          console.warn('写入图片到 localStorage 失败:', err);
           setNewItemImage(base64Data);
         } finally {
           setIsUploadingImage(false);

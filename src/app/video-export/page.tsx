@@ -523,37 +523,8 @@ function VideoExportContent() {
     setIsGeneratingVideo(true);
     
     try {
-      console.log('开始上传图片...');
-      
-      // 先上传所有图片获取URL
-      const uploadedRankingData = {
-        ...rankingData,
-        tiers: await Promise.all(rankingData.tiers.map(async tier => ({
-          ...tier,
-          items: await Promise.all(tier.items.map(async item => {
-            if (item.image && item.image.startsWith('data:')) {
-              console.log(`正在上传图片: ${item.name}`);
-              // 上传base64图片获取URL
-              const imageUrl = await uploadImage(item.image, item.name);
-              console.log(`图片上传结果: ${item.name} -> ${imageUrl.startsWith('/api/') ? '成功' : '失败'}`);
-              return { ...item, image: imageUrl };
-            }
-            return item;
-          }))
-        }))),
-        unrankedItems: await Promise.all(rankingData.unrankedItems.map(async item => {
-          if (item.image && item.image.startsWith('data:')) {
-            console.log(`正在上传图片: ${item.name}`);
-            // 上传base64图片获取URL
-            const imageUrl = await uploadImage(item.image, item.name);
-            console.log(`图片上传结果: ${item.name} -> ${imageUrl.startsWith('/api/') ? '成功' : '失败'}`);
-            return { ...item, image: imageUrl };
-          }
-          return item;
-        }))
-      };
-      
-      console.log('所有图片上传完成，准备发送请求...');
+      console.log('使用 localStorage/base64 图片，跳过服务器临时文件上传');
+      const uploadedRankingData = rankingData;
       
       // 准备发送到后端的数据
       const requestData = {
@@ -564,16 +535,6 @@ function VideoExportContent() {
           audioBlob: section.audioBlob ? await blobToBase64(section.audioBlob) : null
         })))
       };
-      
-      // 检查最终数据中是否还有base64图片
-      const hasBase64Images = JSON.stringify(requestData).includes('data:image/');
-      console.log('请求数据中是否包含base64图片:', hasBase64Images);
-      
-      if (hasBase64Images) {
-        console.error('警告：请求数据中仍然包含base64图片数据！');
-        alert('图片上传可能失败，请检查控制台日志');
-        return;
-      }
       
       // 调用后端API生成视频
       const response = await fetch('/api/generate-video', {
