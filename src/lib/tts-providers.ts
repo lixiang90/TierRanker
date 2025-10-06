@@ -104,12 +104,12 @@ export async function siliconflowTTS(text: string, speaker: string, config: TTSC
     }
 
     const contentType = response.headers.get('content-type') || '';
-    // 返回为二进制音频流，转换为Data URL；默认按wav处理
+    // 返回为二进制音频流，转换为Data URL；默认按mp3处理
     const audioBuffer = await response.arrayBuffer();
     const base64Audio = Buffer.from(audioBuffer).toString('base64');
     const mimeType = contentType.includes('audio/')
       ? contentType.split(';')[0]
-      : 'audio/wav';
+      : 'audio/mp3';
     const audioDataUrl = `data:${mimeType};base64,${base64Audio}`;
 
     // 估算时长（中文大约每字0.12秒）

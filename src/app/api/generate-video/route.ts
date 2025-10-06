@@ -145,11 +145,11 @@ export async function POST(request: NextRequest) {
     const tempDir = path.join(tempBase, `video_${Date.now()}`);
     await fs.promises.mkdir(tempDir, { recursive: true });
 
-    // 生成视频帧
-    const frameCount = await generateFrames(rankingData, audioSections, tempDir);
+    // 先处理音频，获取精确时长，随后按该时长生成帧，避免音画不同步
+    const { finalAudioPath: audioPath, sectionDurations } = await processAudio(audioSections, tempDir);
     
-    // 处理音频文件
-    const audioPath = await processAudio(audioSections, tempDir);
+    // 基于精确音频时长生成视频帧
+    const frameCount = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
     
     // 使用ffmpeg生成视频
     const videoPath = await generateVideoWithFFmpeg(tempDir, frameCount, audioPath);
@@ -185,7 +185,8 @@ export async function POST(request: NextRequest) {
 async function generateFrames(
   rankingData: RankingData,
   audioSections: AudioSection[],
-  tempDir: string
+  tempDir: string,
+  sectionDurations?: number[]
 ): Promise<number> {
   const canvas = createCanvas(1920, 1080);
   const ctx = canvas.getContext('2d');
@@ -193,58 +194,24 @@ async function generateFrames(
   let frameIndex = 0;
   const fps = 30;
   
-  // 首先获取所有音频段落的实际时长
-  const audioSectionsWithDuration = await Promise.all(
-    audioSections.map(async (section, index) => {
-      let duration = section.duration || 3; // 默认3秒
-      
-      if (section.audioBlob && typeof section.audioBlob === 'string') {
-        // 如果有实际音频数据，获取其时长
-        // 如果客户端已提供时长则跳过实测，避免无 ffprobe 环境报错
-        if (!section.duration || section.duration <= 0) {
-          try {
-            const base64Data = section.audioBlob.split(',')[1];
-            const audioBuffer = Buffer.from(base64Data, 'base64');
-            const tempAudioPath = path.join(tempDir, `temp_duration_${index}.webm`);
-            const wavPath = path.join(tempDir, `temp_duration_${index}.wav`);
-            
-            await fs.promises.writeFile(tempAudioPath, audioBuffer);
-            
-            // 先转换为wav格式，然后获取时长（webm格式可能导致ffprobe读取不准确）
-            await execAsync(`${FFMPEG_PATH} -i "${tempAudioPath}" -ar 44100 -ac 2 "${wavPath}"`);
-            
-            // 使用ffprobe获取wav音频时长
-            const { stdout } = await execAsync(`${FFPROBE_PATH} -v quiet -show_entries format=duration -of csv=p=0 "${wavPath}"`);
-            const parsedDuration = parseFloat(stdout.trim());
-            
-            if (!isNaN(parsedDuration) && parsedDuration > 0) {
-              duration = parsedDuration;
-              console.log(`音频段落${index} (${section.type}) 实际时长: ${duration.toFixed(2)}秒`);
-            } else {
-              console.warn(`音频段落${index}时长解析失败，使用默认值${duration}秒`);
-            }
-            
-            // 清理临时文件
-            await fs.promises.unlink(tempAudioPath).catch(() => {});
-            await fs.promises.unlink(wavPath).catch(() => {});
-          } catch (error) {
-            // 获取时长失败时记录日志并使用估算/默认值
-            const estimate = Math.max(2, (section.text?.length || 0) / 4);
-            const fallback = section.duration || estimate || 3.84;
-            console.warn(`获取音频${index}时长失败，使用默认值${fallback}秒:`, error);
-            duration = fallback;
-          }
-        }
+  // 基于已转码音频的精确时长（来自 processAudio）构建时长数组
+  const audioSectionsWithDuration = audioSections.map((section, index) => {
+    let duration = sectionDurations?.[index];
+    if (!duration || duration <= 0) {
+      if (section.duration && section.duration > 0) {
+        duration = section.duration;
       } else if (section.isTTS && section.text) {
-        // TTS段落根据文本长度估算时长
-        const estimatedDuration = Math.max(2, section.text.length / 4);
-        duration = estimatedDuration;
-        console.log(`TTS段落${index} (${section.type}) 估算时长: ${duration.toFixed(2)}秒`);
+        // 中文语速估算：约每秒4字，至少2秒
+        duration = Math.max(2, section.text.length / 4);
+      } else {
+        duration = 3.84; // 保底时长
       }
-      
-      return { ...section, duration };
-    })
-  );
+      console.warn(`音频段落${index}缺少精确时长，使用估算值: ${duration.toFixed(2)}秒`);
+    } else {
+      console.log(`音频段落${index} (${section.type}) 精确时长: ${duration.toFixed(2)}秒`);
+    }
+    return { ...section, duration };
+  });
   
   // 阶段1: 显示空白等级结构
   const introSection = audioSectionsWithDuration.find(s => s.type === 'intro');
@@ -715,8 +682,26 @@ async function saveFrame(canvas: Canvas, tempDir: string, frameIndex: number) {
   await fs.promises.writeFile(framePath, buffer);
 }
 
-async function processAudio(audioSections: AudioSection[], tempDir: string): Promise<string> {
+async function processAudio(audioSections: AudioSection[], tempDir: string): Promise<{ finalAudioPath: string; sectionDurations: number[] }> {
   const audioFiles: string[] = [];
+  const sectionDurations: number[] = [];
+
+  // 辅助：解析 data URI 获取音频扩展名
+  const getAudioExtFromDataUri = (dataUri: string): string | null => {
+    const match = /^data:audio\/(\w+);base64,/.exec(dataUri);
+    return match?.[1] || null;
+  };
+
+  // 使用 ffprobe 获取音频时长（秒）
+  const probeDuration = async (filePath: string): Promise<number | null> => {
+    try {
+      const { stdout } = await execAsync(`${FFPROBE_PATH} -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`);
+      const value = parseFloat(stdout.trim());
+      return isNaN(value) ? null : value;
+    } catch (e) {
+      return null;
+    }
+  };
   
   // 处理每个音频段落
   for (let i = 0; i < audioSections.length; i++) {
@@ -724,19 +709,19 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
     const sectionPath = path.join(tempDir, `audio_section_${i}.wav`);
     
     if (section.audioBlob && typeof section.audioBlob === 'string') {
-      // 处理base64编码的音频数据
-      const base64Data = section.audioBlob.split(',')[1]; // 移除data:audio/...;base64,前缀
+      // 处理 base64 编码的音频数据，按真实格式保存后转码为 wav
+      const base64Data = section.audioBlob.split(',')[1];
       const audioBuffer = Buffer.from(base64Data, 'base64');
-      const tempAudioPath = path.join(tempDir, `temp_audio_${i}.webm`);
+      const ext = getAudioExtFromDataUri(section.audioBlob) || 'mp3';
+      const tempAudioPath = path.join(tempDir, `temp_audio_${i}.${ext}`);
       
-      // 保存原始音频文件
       await fs.promises.writeFile(tempAudioPath, audioBuffer);
-      
-      // 转换为wav格式
       await execAsync(`${FFMPEG_PATH} -i "${tempAudioPath}" -ar 44100 -ac 2 "${sectionPath}"`);
-      
-      // 删除临时文件
-      await fs.promises.unlink(tempAudioPath);
+      await fs.promises.unlink(tempAudioPath).catch(() => {});
+
+      // 使用 ffprobe 获取转码后的精确时长
+      const d = await probeDuration(sectionPath);
+      sectionDurations[i] = d && d > 0 ? d : (section.duration || 3);
     } else {
       // 如果没有音频数据，生成对应时长的静音
       let duration = section.duration || 3;
@@ -750,6 +735,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
       }
       
       await execAsync(`${FFMPEG_PATH} -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t ${duration} "${sectionPath}"`);
+      sectionDurations[i] = duration;
     }
     
     audioFiles.push(sectionPath);
@@ -757,7 +743,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
   
   // 如果只有一个音频文件，直接返回
   if (audioFiles.length === 1) {
-    return audioFiles[0];
+    return { finalAudioPath: audioFiles[0], sectionDurations };
   }
   
   // 合并所有音频文件
@@ -771,7 +757,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
   // 使用ffmpeg合并音频
   await execAsync(`${FFMPEG_PATH} -f concat -safe 0 -i "${concatListPath}" -c copy "${finalAudioPath}"`);
   
-  return finalAudioPath;
+  return { finalAudioPath, sectionDurations };
 }
 
 async function generateVideoWithFFmpeg(
@@ -807,20 +793,33 @@ async function ensureDefaultFontRegistered() {
     let fontPath = envFontPath && envFontPath.trim() ? envFontPath : '';
 
     if (!fontPath) {
-      // 回退：下载开源字体到可写临时目录
-      const tempBase = getTempBaseDir();
-      fontPath = path.join(tempBase, 'NotoSans-Regular.ttf');
+      // 首选：项目内置中文字体（支持 CJK），避免方框显示
+      const fontsDir = path.join(process.cwd(), 'public', 'fonts');
+      const bundledTtf = path.join(fontsDir, 'NotoSansSC-Regular.ttf');
+      const bundledOtf = path.join(fontsDir, 'NotoSansSC-Regular.otf');
       try {
-        // 若不存在则下载
-        await fs.promises.access(fontPath).catch(async () => {
-          const url = 'https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`下载字体失败: ${res.status}`);
-          const arrayBuffer = await res.arrayBuffer();
-          await fs.promises.writeFile(fontPath, Buffer.from(arrayBuffer));
-        });
-      } catch (e) {
-        console.warn('下载或写入字体失败，将继续使用系统回退字体:', e);
+        await fs.promises.access(bundledTtf);
+        fontPath = bundledTtf;
+      } catch {
+        try {
+          await fs.promises.access(bundledOtf);
+          fontPath = bundledOtf;
+        } catch {
+          // 回退：下载 NotoSansSC 到可写临时目录（OTF 格式）
+          const tempBase = getTempBaseDir();
+          fontPath = path.join(tempBase, 'NotoSansSC-Regular.otf');
+          try {
+            await fs.promises.access(fontPath).catch(async () => {
+              const url = 'https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf';
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(`下载字体失败: ${res.status}`);
+              const arrayBuffer = await res.arrayBuffer();
+              await fs.promises.writeFile(fontPath, Buffer.from(arrayBuffer));
+            });
+          } catch (e) {
+            console.warn('下载或写入中文字体失败，将继续使用系统回退字体:', e);
+          }
+        }
       }
     }
 
