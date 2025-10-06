@@ -4,7 +4,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image } from 'canvas';
-import { getTempImagePath } from '@/lib/temp-dir';
+import { getTempImagePath, getTempBaseDir } from '@/lib/temp-dir';
 
 const execAsync = promisify(exec);
 
@@ -116,6 +116,7 @@ interface PlacedItem {
 // 配置请求体大小限制
 export const maxDuration = 300; // 5分钟超时
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -133,8 +134,9 @@ export async function POST(request: NextRequest) {
       audioSections: AudioSection[];
     };
 
-    // 创建临时目录
-    const tempDir = path.join(process.cwd(), 'temp', `video_${Date.now()}`);
+    // 创建临时目录（Vercel 使用 /tmp，本地使用项目 temp）
+    const tempBase = getTempBaseDir();
+    const tempDir = path.join(tempBase, `video_${Date.now()}`);
     await fs.promises.mkdir(tempDir, { recursive: true });
 
     // 生成视频帧
