@@ -5,8 +5,12 @@ import fs from 'fs';
 import path from 'path';
 import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image, registerFont } from 'canvas';
 import { getTempImagePath, getTempBaseDir } from '@/lib/temp-dir';
+import ffmpegPath from 'ffmpeg-static';
+import ffprobe from '@ffprobe-installer/ffprobe';
 
 const execAsync = promisify(exec);
+const FFMPEG_PATH: string = (ffmpegPath as unknown as string) || 'ffmpeg';
+const FFPROBE_PATH: string = ((ffprobe as unknown as { path?: string })?.path ?? 'ffprobe');
 
 // 图片缓存，避免重复加载相同图片
 const imageCache = new Map<string, Image>();
@@ -207,10 +211,10 @@ async function generateFrames(
             await fs.promises.writeFile(tempAudioPath, audioBuffer);
             
             // 先转换为wav格式，然后获取时长（webm格式可能导致ffprobe读取不准确）
-            await execAsync(`ffmpeg -i "${tempAudioPath}" -ar 44100 -ac 2 "${wavPath}"`);
+            await execAsync(`${FFMPEG_PATH} -i "${tempAudioPath}" -ar 44100 -ac 2 "${wavPath}"`);
             
             // 使用ffprobe获取wav音频时长
-            const { stdout } = await execAsync(`ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${wavPath}"`);
+            const { stdout } = await execAsync(`${FFPROBE_PATH} -v quiet -show_entries format=duration -of csv=p=0 "${wavPath}"`);
             const parsedDuration = parseFloat(stdout.trim());
             
             if (!isNaN(parsedDuration) && parsedDuration > 0) {
@@ -729,7 +733,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
       await fs.promises.writeFile(tempAudioPath, audioBuffer);
       
       // 转换为wav格式
-      await execAsync(`ffmpeg -i "${tempAudioPath}" -ar 44100 -ac 2 "${sectionPath}"`);
+      await execAsync(`${FFMPEG_PATH} -i "${tempAudioPath}" -ar 44100 -ac 2 "${sectionPath}"`);
       
       // 删除临时文件
       await fs.promises.unlink(tempAudioPath);
@@ -745,7 +749,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
         console.log(`TTS段落 "${section.text.substring(0, 20)}..." 估算时长: ${duration}秒`);
       }
       
-      await execAsync(`ffmpeg -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t ${duration} "${sectionPath}"`);
+      await execAsync(`${FFMPEG_PATH} -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t ${duration} "${sectionPath}"`);
     }
     
     audioFiles.push(sectionPath);
@@ -765,7 +769,7 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
   await fs.promises.writeFile(concatListPath, concatList);
   
   // 使用ffmpeg合并音频
-  await execAsync(`ffmpeg -f concat -safe 0 -i "${concatListPath}" -c copy "${finalAudioPath}"`);
+  await execAsync(`${FFMPEG_PATH} -f concat -safe 0 -i "${concatListPath}" -c copy "${finalAudioPath}"`);
   
   return finalAudioPath;
 }
@@ -779,7 +783,7 @@ async function generateVideoWithFFmpeg(
   const framesPattern = path.join(tempDir, 'frame_%06d.png');
   
   // 使用ffmpeg合成视频
-  const command = `ffmpeg -framerate 30 -i "${framesPattern}" -i "${audioPath}" -c:v libx264 -c:a aac -pix_fmt yuv420p -shortest "${videoPath}"`;
+  const command = `${FFMPEG_PATH} -framerate 30 -i "${framesPattern}" -i "${audioPath}" -c:v libx264 -c:a aac -pix_fmt yuv420p -shortest "${videoPath}"`;
   
   await execAsync(command);
   

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  serverExternalPackages: ['canvas'],
+  serverExternalPackages: ['canvas', 'ffmpeg-static', '@ffprobe-installer/ffprobe'],
   trailingSlash: true,
   images: {
     unoptimized: true
