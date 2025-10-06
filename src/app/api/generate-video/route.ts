@@ -3,7 +3,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image } from 'canvas';
+import { createCanvas, loadImage, Canvas, CanvasRenderingContext2D, Image, registerFont } from 'canvas';
 import { getTempImagePath, getTempBaseDir } from '@/lib/temp-dir';
 
 const execAsync = promisify(exec);
@@ -120,6 +120,8 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    // 预先注册默认字体，避免 Fontconfig 错误
+    await ensureDefaultFontRegistered();
     // 增加请求体大小限制
     const contentLength = request.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > 50 * 1024 * 1024) { // 50MB限制
@@ -401,7 +403,7 @@ function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTie
   
   // 绘制标题
   ctx.fillStyle = '#1f2937';
-  ctx.font = 'bold 48px "Microsoft YaHei", "SimHei", Arial, sans-serif';
+  ctx.font = 'bold 48px DefaultSans';
   ctx.textAlign = 'center';
   ctx.fillText('从夯到拉排行榜', 960, 80);
   
@@ -423,7 +425,7 @@ function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTie
     ctx.strokeRect(50, y, 200, tierHeight);
     
     ctx.fillStyle = '#1f2937';
-    ctx.font = 'bold 32px "Microsoft YaHei", "SimHei", Arial, sans-serif';
+    ctx.font = 'bold 32px DefaultSans';
     ctx.textAlign = 'center';
     ctx.fillText(tier.name, 150, y + tierHeight / 2 + 12);
     
@@ -491,7 +493,7 @@ async function drawItemInTier(ctx: CanvasRenderingContext2D, item: RankingItem, 
       
       // 绘制项目名称在图片下方
       ctx.fillStyle = '#1f2937';
-      ctx.font = 'bold 12px "Microsoft YaHei", "SimHei", Arial, sans-serif';
+      ctx.font = 'bold 12px DefaultSans';
       ctx.textAlign = 'center';
       ctx.fillText(item.name, x + width / 2, y + height - 8);
       
@@ -515,7 +517,7 @@ function drawDefaultItemStyle(ctx: CanvasRenderingContext2D, item: RankingItem, 
   ctx.fillRect(x + 5, y + 5, width - 10, height - 10);
   
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px "Microsoft YaHei", "SimHei", Arial, sans-serif';
+  ctx.font = 'bold 14px DefaultSans';
   ctx.textAlign = 'center';
   ctx.fillText(item.name, x + width / 2, y + height / 2 + 5);
 }
@@ -656,7 +658,7 @@ async function drawMovingItemContent(ctx: CanvasRenderingContext2D, item: Rankin
       // 绘制项目名称在图片下方
       ctx.fillStyle = '#1f2937';
       const fontSize = Math.max(12, size * 0.12);
-      ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", Arial, sans-serif`;
+      ctx.font = `bold ${fontSize}px DefaultSans`;
       ctx.textAlign = 'center';
       ctx.fillText(item.name, x + size / 2, y + size - padding);
       
@@ -682,7 +684,7 @@ function drawMovingItemDefaultStyle(ctx: CanvasRenderingContext2D, item: Ranking
   
   ctx.fillStyle = '#ffffff';
   const fontSize = Math.max(14, size * 0.14);
-  ctx.font = `bold ${fontSize}px "Microsoft YaHei", "SimHei", Arial, sans-serif`;
+  ctx.font = `bold ${fontSize}px DefaultSans`;
   ctx.textAlign = 'center';
   ctx.fillText(item.name, x + size / 2, y + size / 2 + fontSize / 3);
 }
@@ -789,5 +791,45 @@ async function cleanupTempFiles(tempDir: string) {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   } catch (error) {
     console.error('清理临时文件失败:', error);
+  }
+}
+// 在无 Fontconfig 环境（如 Vercel）注册一个可用的默认字体，避免字体匹配报错
+let fontInitialized = false;
+async function ensureDefaultFontRegistered() {
+  if (fontInitialized) return;
+  try {
+    // 允许通过环境变量指定字体路径（例如持久化到项目中或 Blob 存储）
+    const envFontPath = process.env.CANVAS_FONT_PATH;
+    let fontPath = envFontPath && envFontPath.trim() ? envFontPath : '';
+
+    if (!fontPath) {
+      // 回退：下载开源字体到可写临时目录
+      const tempBase = getTempBaseDir();
+      fontPath = path.join(tempBase, 'NotoSans-Regular.ttf');
+      try {
+        // 若不存在则下载
+        await fs.promises.access(fontPath).catch(async () => {
+          const url = 'https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf';
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`下载字体失败: ${res.status}`);
+          const arrayBuffer = await res.arrayBuffer();
+          await fs.promises.writeFile(fontPath, Buffer.from(arrayBuffer));
+        });
+      } catch (e) {
+        console.warn('下载或写入字体失败，将继续使用系统回退字体:', e);
+      }
+    }
+
+    // 如果有可用的字体文件，注册为 DefaultSans
+    if (fontPath) {
+      try {
+        registerFont(fontPath, { family: 'DefaultSans' });
+        fontInitialized = true;
+      } catch (e) {
+        console.warn('注册字体失败，将继续使用系统回退字体:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('初始化默认字体失败，将继续使用系统回退字体:', e);
   }
 }
