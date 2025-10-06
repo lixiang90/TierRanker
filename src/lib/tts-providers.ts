@@ -1,5 +1,18 @@
 import { TTSConfig, TTSResponse } from './tts-config';
 
+// SiliconFlow 声库返回项与列表类型（避免使用 any）
+interface SiliconFlowVoiceItem {
+  model?: string;
+  customName?: string;
+  text?: string;
+  uri?: string;
+}
+
+interface SiliconFlowVoiceList {
+  results?: SiliconFlowVoiceItem[];
+  result?: SiliconFlowVoiceItem[];
+}
+
 // SiliconFlow CosyVoice2 远程TTS提供商
 export async function siliconflowTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
   try {
@@ -24,8 +37,12 @@ export async function siliconflowTTS(text: string, speaker: string, config: TTSC
         });
 
         if (listResp.ok) {
-          const data = await listResp.json();
-          const results: any[] = Array.isArray(data?.results) ? data.results : [];
+          const data = (await listResp.json()) as SiliconFlowVoiceList;
+          const results: SiliconFlowVoiceItem[] = Array.isArray(data.results)
+            ? data.results
+            : Array.isArray(data.result)
+              ? data.result
+              : [];
 
           // 尝试使用环境默认voice
           if (envDefaultVoice) {
@@ -48,7 +65,7 @@ export async function siliconflowTTS(text: string, speaker: string, config: TTSC
             voiceUri = results[0].uri;
           }
         }
-      } catch (e) {
+      } catch {
         // 声库不可用时仅在存在环境默认值且为URI时使用之
         if (envDefaultVoice && envDefaultVoice.startsWith('speech:')) {
           voiceUri = envDefaultVoice;
@@ -249,7 +266,7 @@ export async function azureTTS(text: string, speaker: string, config: TTSConfig)
 }
 
 // gTTS提供商（Google Text-to-Speech免费版）
-export async function gttsTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
+export async function gttsTTS(text: string, speaker: string, _config: TTSConfig): Promise<TTSResponse> {
   try {
     // gTTS使用语言代码而不是说话人
     const lang = speaker || 'zh';

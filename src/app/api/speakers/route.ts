@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getTTSConfig, getDefaultSpeakers } from '@/lib/tts-config';
 
+// SiliconFlow 声库类型定义，避免使用 any
+interface SiliconFlowVoiceItem {
+  model?: string;
+  customName?: string;
+  text?: string;
+  uri?: string;
+}
+
+interface SiliconFlowVoiceList {
+  results?: SiliconFlowVoiceItem[];
+  result?: SiliconFlowVoiceItem[];
+}
 
 
-export async function GET(request: NextRequest) {
+
+export async function GET(_request: NextRequest) {
   try {
     const config = getTTSConfig();
     
@@ -25,7 +38,7 @@ export async function GET(request: NextRequest) {
             provider: config.provider
           });
         }
-      } catch (error) {
+      } catch {
         console.warn('无法连接到CosyVoice API，使用默认说话人列表');
       }
     }
@@ -51,17 +64,17 @@ export async function GET(request: NextRequest) {
         });
 
         if (response.ok) {
-          const data = await response.json();
+          const data = (await response.json()) as SiliconFlowVoiceList;
           // 兼容两种返回键：results 与 result
-          const list: any[] = Array.isArray((data as any)?.results)
-            ? (data as any).results
-            : Array.isArray((data as any)?.result)
-              ? (data as any).result
+          const list: SiliconFlowVoiceItem[] = Array.isArray(data.results)
+            ? data.results
+            : Array.isArray(data.result)
+              ? data.result
               : [];
           // 返回可用的完整 voice URI 列表；若为空，回退到环境变量配置
           let speakers: string[] = list
-            .map((r: any) => (typeof r?.uri === 'string' ? r.uri : null))
-            .filter(Boolean);
+            .map((r) => (typeof r.uri === 'string' ? r.uri : null))
+            .filter((u): u is string => Boolean(u));
 
           // 将环境默认音色置顶，确保前端默认选中它
           const envDefault = process.env.SILICONFLOW_DEFAULT_VOICE || process.env.SILICONFLOW_DEFAULT_VOICE_URI;
@@ -91,7 +104,7 @@ export async function GET(request: NextRequest) {
             provider: config.provider
           });
         }
-      } catch (error) {
+      } catch {
         const envDefaultVoice = process.env.SILICONFLOW_DEFAULT_VOICE || process.env.SILICONFLOW_DEFAULT_VOICE_URI;
         console.warn('SiliconFlow 声库接口不可用，回退默认说话人或环境默认voice');
         return NextResponse.json({
