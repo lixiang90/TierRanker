@@ -1,5 +1,118 @@
 import { TTSConfig, TTSResponse } from './tts-config';
 
+// SiliconFlow CosyVoice2 远程TTS提供商
+export async function siliconflowTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
+  try {
+    if (!config.apiKey) {
+      throw new Error('SiliconFlow API令牌未配置 (SILICONFLOW_API_KEY)');
+    }
+
+    // 选择voice：优先使用传入的URI；否则尝试从声库选择一个可用的voice，或使用环境变量默认值
+    let voiceUri: string | undefined;
+    const envDefaultVoice = process.env.SILICONFLOW_DEFAULT_VOICE || process.env.SILICONFLOW_DEFAULT_VOICE_URI;
+
+    const normalizeName = (s: string) => s.trim().toLowerCase();
+
+    if (typeof speaker === 'string' && speaker.startsWith('speech:')) {
+      voiceUri = speaker;
+    } else {
+      // 获取声库列表，并尝试匹配speaker或环境默认值
+      try {
+        const listResp = await fetch('https://api.siliconflow.cn/v1/audio/voice/list', {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${config.apiKey}` }
+        });
+
+        if (listResp.ok) {
+          const data = await listResp.json();
+          const results: any[] = Array.isArray(data?.results) ? data.results : [];
+
+          // 尝试使用环境默认voice
+          if (envDefaultVoice) {
+            const envNorm = normalizeName(envDefaultVoice);
+            const byName = results.find(v => typeof v?.customName === 'string' && normalizeName(v.customName) === envNorm);
+            const byUri = results.find(v => typeof v?.uri === 'string' && normalizeName(v.uri) === envNorm);
+            voiceUri = byUri?.uri || byName?.uri || (envDefaultVoice.startsWith('speech:') ? envDefaultVoice : undefined);
+          }
+
+          // 如果有传入speaker且不是uri，尝试匹配
+          if (!voiceUri && speaker) {
+            const spNorm = normalizeName(speaker);
+            const matchByName = results.find(v => typeof v?.customName === 'string' && normalizeName(v.customName) === spNorm);
+            const matchByUriContains = results.find(v => typeof v?.uri === 'string' && v.uri.toLowerCase().includes(spNorm));
+            voiceUri = matchByName?.uri || matchByUriContains?.uri;
+          }
+
+          // 最后回退到列表的第一个
+          if (!voiceUri && results.length > 0 && typeof results[0]?.uri === 'string') {
+            voiceUri = results[0].uri;
+          }
+        }
+      } catch (e) {
+        // 声库不可用时仅在存在环境默认值且为URI时使用之
+        if (envDefaultVoice && envDefaultVoice.startsWith('speech:')) {
+          voiceUri = envDefaultVoice;
+        }
+      }
+    }
+
+    if (!voiceUri) {
+      throw new Error('未选择到有效的SiliconFlow voice，请在请求中传入voice URI或配置SILICONFLOW_DEFAULT_VOICE');
+    }
+
+    // 构造请求体
+    const body: Record<string, unknown> = {
+      model: 'FunAudioLLM/CosyVoice2-0.5B',
+      input: text,
+      voice: voiceUri
+    };
+
+    const response = await fetch('https://api.siliconflow.cn/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      // 尝试读取JSON错误
+      let errDetail = '';
+      try {
+        const j = await response.text();
+        errDetail = j?.slice(0, 200);
+      } catch {}
+      throw new Error(`SiliconFlow TTS API调用失败: ${response.status} ${errDetail}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    // 返回为二进制音频流，转换为Data URL；默认按wav处理
+    const audioBuffer = await response.arrayBuffer();
+    const base64Audio = Buffer.from(audioBuffer).toString('base64');
+    const mimeType = contentType.includes('audio/')
+      ? contentType.split(';')[0]
+      : 'audio/wav';
+    const audioDataUrl = `data:${mimeType};base64,${base64Audio}`;
+
+    // 估算时长（中文大约每字0.12秒）
+    const estimatedDuration = Math.max(2, text.length * 0.12);
+
+    return {
+      success: true,
+      audioUrl: audioDataUrl,
+      duration: estimatedDuration,
+      speaker: voiceUri,
+      text
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '未知错误'
+    };
+  }
+}
+
 // CosyVoice TTS提供商（本地开发）
 export async function cosyvoiceTTS(text: string, speaker: string, config: TTSConfig): Promise<TTSResponse> {
   try {
@@ -190,6 +303,8 @@ export async function generateTTS(text: string, speaker: string, config: TTSConf
   switch (config.provider) {
     case 'cosyvoice':
       return cosyvoiceTTS(text, speaker, config);
+    case 'siliconflow':
+      return siliconflowTTS(text, speaker, config);
     case 'openai':
       return openaiTTS(text, speaker, config);
     case 'azure':

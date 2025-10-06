@@ -1017,11 +1017,16 @@ function VideoExportContent() {
                       className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm min-w-[150px]"
                     >
                       {speakers.length > 0 ? (
-                        speakers.map((speaker, index) => (
-                          <option key={index} value={speaker}>
-                            {speaker}
-                          </option>
-                        ))
+                        speakers.map((speaker, index) => {
+                          const label = speaker.startsWith('speech:')
+                            ? (speaker.split(':')[1] || speaker)
+                            : speaker;
+                          return (
+                            <option key={index} value={speaker}>
+                              {label}
+                            </option>
+                          );
+                        })
                       ) : (
                         <option value="default">默认说话人</option>
                       )}
