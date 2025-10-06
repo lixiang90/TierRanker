@@ -440,9 +440,23 @@ export default function Home() {
       return;
     }
     
-    // 将数据编码并传递给视频导出页面
-    const dataParam = encodeURIComponent(JSON.stringify(rankingData));
-    router.push(`/video-export?data=${dataParam}`);
+    // 使用 sessionStorage 传递大数据，避免过长的 URL
+    try {
+      const payload = JSON.stringify(rankingData);
+      sessionStorage.setItem('videoExportData', payload);
+      // 兼容新标签页打开的情况：同时写入 localStorage
+      try {
+        localStorage.setItem('videoExportData', payload);
+      } catch (lerr) {
+        console.warn('写入 localStorage 失败（将仅使用 sessionStorage）:', lerr);
+      }
+    } catch (e) {
+      console.warn('保存导出数据到 sessionStorage 失败，回退到 URL 传参:', e);
+      const dataParam = encodeURIComponent(JSON.stringify(rankingData));
+      router.push(`/video-export?data=${dataParam}`);
+      return;
+    }
+    router.push('/video-export');
   };
 
   // 级别管理函数

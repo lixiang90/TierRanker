@@ -686,10 +686,24 @@ async function processAudio(audioSections: AudioSection[], tempDir: string): Pro
   const audioFiles: string[] = [];
   const sectionDurations: number[] = [];
 
-  // 辅助：解析 data URI 获取音频扩展名
+  // 辅助：解析 data URI 获取音频扩展名，并做格式归一化
   const getAudioExtFromDataUri = (dataUri: string): string | null => {
-    const match = /^data:audio\/(\w+);base64,/.exec(dataUri);
-    return match?.[1] || null;
+    const match = /^data:audio\/([a-zA-Z0-9\-]+);base64,/.exec(dataUri);
+    const raw = match?.[1]?.toLowerCase() || null;
+    if (!raw) return null;
+    // 常见类型归一化：audio/mpeg -> mp3, audio/x-wav -> wav, audio/webm -> webm
+    const map: Record<string, string> = {
+      mpeg: 'mp3',
+      mp3: 'mp3',
+      wav: 'wav',
+      'x-wav': 'wav',
+      webm: 'webm',
+      ogg: 'ogg',
+      m4a: 'm4a',
+      'x-m4a': 'm4a',
+      aac: 'aac'
+    };
+    return map[raw] || raw;
   };
 
   // 使用 ffprobe 获取音频时长（秒）

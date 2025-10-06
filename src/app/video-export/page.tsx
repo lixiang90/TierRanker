@@ -104,17 +104,48 @@ function VideoExportContent() {
   };
 
   useEffect(() => {
-    // 从URL参数获取排列数据
-    const dataParam = searchParams.get('data');
-    if (dataParam) {
-      try {
-        const data = JSON.parse(decodeURIComponent(dataParam));
-        setRankingData(data);
-        initializeAudioSections(data);
-      } catch (error) {
-        console.error('Failed to parse ranking data:', error);
-        router.push('/');
+    // 优先从 sessionStorage 读取数据，避免使用过长的 URL
+    let data: RankingData | null = null;
+    try {
+      const stored = sessionStorage.getItem('videoExportData');
+      if (stored) {
+        data = JSON.parse(stored);
+        // 读取一次后清理，避免过期数据影响后续导出
+        sessionStorage.removeItem('videoExportData');
       }
+    } catch (e) {
+      console.warn('读取 sessionStorage 中的导出数据失败:', e);
+    }
+
+    // 其次从 localStorage 读取（兼容新标签页打开的情况）
+    if (!data) {
+      try {
+        const lsStored = localStorage.getItem('videoExportData');
+        if (lsStored) {
+          data = JSON.parse(lsStored);
+          // 读取后清理，避免污染后续导出流程
+          localStorage.removeItem('videoExportData');
+        }
+      } catch (e) {
+        console.warn('读取 localStorage 中的导出数据失败:', e);
+      }
+    }
+
+    // 回退：从URL参数获取排列数据（兼容旧链接）
+    if (!data) {
+      const dataParam = searchParams.get('data');
+      if (dataParam) {
+        try {
+          data = JSON.parse(decodeURIComponent(dataParam));
+        } catch (error) {
+          console.error('Failed to parse ranking data from URL:', error);
+        }
+      }
+    }
+
+    if (data) {
+      setRankingData(data);
+      initializeAudioSections(data);
     } else {
       router.push('/');
     }
