@@ -649,6 +649,14 @@ function VideoExportContent() {
     });
   };
 
+  // 辅助函数：格式化毫秒为 mm:ss
+  const formatMs = (ms: number): string => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   // 上传图片获取URL
   const uploadImage = async (imageData: string, fileName: string): Promise<string> => {
     try {
