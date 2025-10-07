@@ -148,11 +148,11 @@ export async function POST(request: NextRequest) {
     // 先处理音频，获取精确时长，随后按该时长生成帧，避免音画不同步
     const { finalAudioPath: audioPath, sectionDurations } = await processAudio(audioSections, tempDir);
     
-    // 基于精确音频时长生成视频帧
-    const frameCount = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
+    // 基于精确音频时长生成视频帧与分段信息
+    const { frameCount, segments } = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
     
-    // 使用ffmpeg生成视频
-    const videoPath = await generateVideoWithFFmpeg(tempDir, frameCount, audioPath);
+    // 使用分段与 concat 拼接生成视频
+    const videoPath = await generateVideoFromSegments(tempDir, segments, audioPath);
     
     // 读取生成的视频文件
     const videoBuffer = await fs.promises.readFile(videoPath);
@@ -187,12 +187,13 @@ async function generateFrames(
   audioSections: AudioSection[],
   tempDir: string,
   sectionDurations?: number[]
-): Promise<number> {
+): Promise<{ frameCount: number; segments: { kind: 'frames' | 'loop'; startFrame?: number; frameCount?: number; imagePath?: string; duration?: number }[] }> {
   const canvas = createCanvas(1920, 1080);
   const ctx = canvas.getContext('2d');
   
   let frameIndex = 0;
   const fps = 30;
+  const segments: { kind: 'frames' | 'loop'; startFrame?: number; frameCount?: number; imagePath?: string; duration?: number }[] = [];
   
   // 基于已转码音频的精确时长（来自 processAudio）构建时长数组
   const audioSectionsWithDuration = audioSections.map((section, index) => {
@@ -217,11 +218,12 @@ async function generateFrames(
   const introSection = audioSectionsWithDuration.find(s => s.type === 'intro');
   const introDuration = introSection?.duration || 3;
   const introFrames = Math.floor(introDuration * fps);
-  
+  const introStart = frameIndex;
   for (let i = 0; i < introFrames; i++) {
     drawBlankTierStructure(ctx, rankingData.tiers);
     await saveFrame(canvas, tempDir, frameIndex++);
   }
+  segments.push({ kind: 'frames', startFrame: introStart, frameCount: introFrames });
   
   // 阶段2: 按拖拽历史顺序逐项移动动画
   let allItems: (RankingItem & { tierName: string; tierColor?: string })[] = [];
@@ -271,73 +273,172 @@ async function generateFrames(
     
 
     
-    for (let frame = 0; frame < itemFrames; frame++) {
-      const progress = frame / itemFrames;
-      
-      // 绘制背景和等级结构
-      drawBlankTierStructure(ctx, rankingData.tiers);
-      
-      // 绘制已放置的项目（考虑位置替换动画）
-      // 按等级分组已放置的项目
-      const placedItemsByTier = new Map<string, PlacedItem[]>();
-      for (let i = 0; i < itemIndex; i++) {
-        const placedItem = allItems[i];
-        if (!placedItemsByTier.has(placedItem.tierName)) {
-          placedItemsByTier.set(placedItem.tierName, []);
+    // 优化：如果是中心定格动画，中间定格阶段仅渲染一次并复用该帧
+    if (needsCenterStage) {
+      const moveToCenterRatio = 0.2;
+      const stayAtCenterRatio = 0.6;
+      const moveToTargetRatio = 0.2;
+
+      const moveToCenterFrames = Math.floor(itemFrames * moveToCenterRatio);
+      const stayAtCenterFrames = Math.floor(itemFrames * stayAtCenterRatio);
+      const moveToTargetFrames = itemFrames - moveToCenterFrames - stayAtCenterFrames;
+
+      // 阶段1：移动到中心并放大（逐帧渲染 → 记录分段）
+      const moveToCenterStart = frameIndex;
+      for (let f = 0; f < moveToCenterFrames; f++) {
+        const progress = f / itemFrames;
+        // 背景与已放置项目
+        drawBlankTierStructure(ctx, rankingData.tiers);
+        const placedItemsByTier = new Map<string, PlacedItem[]>();
+        for (let i = 0; i < itemIndex; i++) {
+          const placedItem = allItems[i];
+          if (!placedItemsByTier.has(placedItem.tierName)) {
+            placedItemsByTier.set(placedItem.tierName, []);
+          }
+          placedItemsByTier.get(placedItem.tierName)!.push({ item: placedItem, originalIndex: i });
         }
-        placedItemsByTier.get(placedItem.tierName)!.push({ item: placedItem, originalIndex: i });
-      }
-      
-      // 为每个等级绘制已放置的项目
-       for (const [tierName, tierItems] of placedItemsByTier) {
-         const placedTier = rankingData.tiers.find(t => t.name === tierName);
-         if (placedTier) {
-           const placedTierIndex = rankingData.tiers.findIndex(t => t.name === tierName);
-           
-           for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
-             const tierItem = tierItems[indexInTier];
-             const placedItem = tierItem.item;
-             let x, y;
-             
-             // 位置替换动画：如果当前项目要插入到同一等级，且已放置的项目需要向后移动
-             if (tierName === item.tierName && 
-                 indexInTier >= targetItemIndex && 
-                 needsPositionReplacement) {
-               // 计算挤压动画的偏移
-               const pushProgress = Math.min(1, progress * 1.5); // 前2/3时间完成挤压
-               
-               const tierHeight = 120;
-               const startY = 150;
-               y = startY + placedTierIndex * (tierHeight + 20);
-               x = 290 + (indexInTier + pushProgress) * 110;
-               
-               // 添加挤压动画的视觉效果
-               if (pushProgress < 1) {
-                 // 在挤压过程中添加轻微的抖动效果
-                 const shake = Math.sin(progress * Math.PI * 8) * (1 - pushProgress) * 2;
-                 x += shake;
-                 y += shake;
-               }
-             } else {
-               const tierHeight = 120;
-               const startY = 150;
-               y = startY + placedTierIndex * (tierHeight + 20);
-               x = 290 + indexInTier * 110;
-             }
-             
-             await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
-           }
-         }
-       }
-      
-      // 绘制当前移动的项目
-      if (needsCenterStage) {
+        for (const [tierName, tierItems] of placedItemsByTier) {
+          const placedTier = rankingData.tiers.find(t => t.name === tierName);
+          if (placedTier) {
+            const placedTierIndex = rankingData.tiers.findIndex(t => t.name === tierName);
+            for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
+              const tierItem = tierItems[indexInTier];
+              const placedItem = tierItem.item;
+              let x, y;
+              if (tierName === item.tierName && indexInTier >= targetItemIndex && needsPositionReplacement) {
+                const pushProgress = Math.min(1, progress * 1.5);
+                const tierHeight = 120;
+                const startY = 150;
+                y = startY + placedTierIndex * (tierHeight + 20);
+                x = 290 + (indexInTier + pushProgress) * 110;
+                if (pushProgress < 1) {
+                  const shake = Math.sin(progress * Math.PI * 8) * (1 - pushProgress) * 2;
+                  x += shake;
+                  y += shake;
+                }
+              } else {
+                const tierHeight = 120;
+                const startY = 150;
+                y = startY + placedTierIndex * (tierHeight + 20);
+                x = 290 + indexInTier * 110;
+              }
+              await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
+            }
+          }
+        }
         await drawMovingItemWithCenterStage(ctx, item, progress, rankingData.tiers);
-      } else {
-        await drawMovingItem(ctx, item, progress, rankingData.tiers);
+        await saveFrame(canvas, tempDir, frameIndex++);
       }
-      
-      await saveFrame(canvas, tempDir, frameIndex++);
+      if (moveToCenterFrames > 0) {
+        segments.push({ kind: 'frames', startFrame: moveToCenterStart, frameCount: moveToCenterFrames });
+      }
+
+      // 阶段2：中心定格（只渲染一次，生成单图循环段）
+      if (stayAtCenterFrames > 0) {
+        const progress = moveToCenterFrames / itemFrames; // 进入定格的首帧
+        drawBlankTierStructure(ctx, rankingData.tiers);
+        const placedItemsByTier = new Map<string, PlacedItem[]>();
+        for (let i = 0; i < itemIndex; i++) {
+          const placedItem = allItems[i];
+          if (!placedItemsByTier.has(placedItem.tierName)) {
+            placedItemsByTier.set(placedItem.tierName, []);
+          }
+          placedItemsByTier.get(placedItem.tierName)!.push({ item: placedItem, originalIndex: i });
+        }
+        for (const [tierName, tierItems] of placedItemsByTier) {
+          const placedTier = rankingData.tiers.find(t => t.name === tierName);
+          if (placedTier) {
+            const placedTierIndex = rankingData.tiers.findIndex(t => t.name === tierName);
+            for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
+              const tierItem = tierItems[indexInTier];
+              const placedItem = tierItem.item;
+              const tierHeight = 120;
+              const startY = 150;
+              const y = startY + placedTierIndex * (tierHeight + 20);
+              const x = 290 + indexInTier * 110;
+              await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
+            }
+          }
+        }
+        await drawMovingItemWithCenterStage(ctx, item, progress, rankingData.tiers);
+        // 渲染首帧为单图，记录循环分段而不写入重复帧
+        const buffer = canvas.toBuffer('image/png');
+        const freezeImagePath = path.join(tempDir, `freeze_${String(frameIndex).padStart(6, '0')}.png`);
+        await fs.promises.writeFile(freezeImagePath, buffer);
+        const freezeDuration = stayAtCenterFrames / fps;
+        segments.push({ kind: 'loop', imagePath: freezeImagePath, duration: freezeDuration });
+      }
+
+      // 阶段3：移动到目标位置（逐帧渲染 → 记录分段）
+      const moveToTargetStart = frameIndex;
+      for (let f = 0; f < moveToTargetFrames; f++) {
+        const progress = (moveToCenterFrames + stayAtCenterFrames + f) / itemFrames;
+        drawBlankTierStructure(ctx, rankingData.tiers);
+        const placedItemsByTier = new Map<string, PlacedItem[]>();
+        for (let i = 0; i < itemIndex; i++) {
+          const placedItem = allItems[i];
+          if (!placedItemsByTier.has(placedItem.tierName)) {
+            placedItemsByTier.set(placedItem.tierName, []);
+          }
+          placedItemsByTier.get(placedItem.tierName)!.push({ item: placedItem, originalIndex: i });
+        }
+        for (const [tierName, tierItems] of placedItemsByTier) {
+          const placedTier = rankingData.tiers.find(t => t.name === tierName);
+          if (placedTier) {
+            const placedTierIndex = rankingData.tiers.findIndex(t => t.name === tierName);
+            for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
+              const tierItem = tierItems[indexInTier];
+              const placedItem = tierItem.item;
+              let x, y;
+              const tierHeight = 120;
+              const startY = 150;
+              y = startY + placedTierIndex * (tierHeight + 20);
+              x = 290 + indexInTier * 110;
+              await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
+            }
+          }
+        }
+        await drawMovingItemWithCenterStage(ctx, item, progress, rankingData.tiers);
+        await saveFrame(canvas, tempDir, frameIndex++);
+      }
+      if (moveToTargetFrames > 0) {
+        segments.push({ kind: 'frames', startFrame: moveToTargetStart, frameCount: moveToTargetFrames });
+      }
+    } else {
+      // 原有简单移动动画：逐帧渲染 → 记录分段
+      const simpleMoveStart = frameIndex;
+      for (let frame = 0; frame < itemFrames; frame++) {
+        const progress = frame / itemFrames;
+        drawBlankTierStructure(ctx, rankingData.tiers);
+        const placedItemsByTier = new Map<string, PlacedItem[]>();
+        for (let i = 0; i < itemIndex; i++) {
+          const placedItem = allItems[i];
+          if (!placedItemsByTier.has(placedItem.tierName)) {
+            placedItemsByTier.set(placedItem.tierName, []);
+          }
+          placedItemsByTier.get(placedItem.tierName)!.push({ item: placedItem, originalIndex: i });
+        }
+        for (const [tierName, tierItems] of placedItemsByTier) {
+          const placedTier = rankingData.tiers.find(t => t.name === tierName);
+          if (placedTier) {
+            const placedTierIndex = rankingData.tiers.findIndex(t => t.name === tierName);
+            for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
+              const tierItem = tierItems[indexInTier];
+              const placedItem = tierItem.item;
+              const tierHeight = 120;
+              const startY = 150;
+              const y = startY + placedTierIndex * (tierHeight + 20);
+              const x = 290 + indexInTier * 110;
+              await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
+            }
+          }
+        }
+        await drawMovingItem(ctx, item, progress, rankingData.tiers);
+        await saveFrame(canvas, tempDir, frameIndex++);
+      }
+      if (itemFrames > 0) {
+        segments.push({ kind: 'frames', startFrame: simpleMoveStart, frameCount: itemFrames });
+      }
     }
   }
   
@@ -345,13 +446,14 @@ async function generateFrames(
   const conclusionSection = audioSectionsWithDuration.find(s => s.type === 'conclusion');
   const conclusionDuration = conclusionSection?.duration || 3;
   const conclusionFrames = Math.floor(conclusionDuration * fps);
-  
+  const conclusionStart = frameIndex;
   for (let i = 0; i < conclusionFrames; i++) {
     await drawCompleteTierTable(ctx, rankingData);
     await saveFrame(canvas, tempDir, frameIndex++);
   }
+  segments.push({ kind: 'frames', startFrame: conclusionStart, frameCount: conclusionFrames });
   
-  return frameIndex;
+  return { frameCount: frameIndex, segments };
 }
 
 // Tailwind CSS颜色映射
@@ -682,6 +784,12 @@ async function saveFrame(canvas: Canvas, tempDir: string, frameIndex: number) {
   await fs.promises.writeFile(framePath, buffer);
 }
 
+// 直接将PNG缓冲区写入指定帧索引，避免重复渲染
+async function saveFrameBuffer(buffer: Buffer, tempDir: string, frameIndex: number) {
+  const framePath = path.join(tempDir, `frame_${frameIndex.toString().padStart(6, '0')}.png`);
+  await fs.promises.writeFile(framePath, buffer);
+}
+
 async function processAudio(audioSections: AudioSection[], tempDir: string): Promise<{ finalAudioPath: string; sectionDurations: number[] }> {
   const audioFiles: string[] = [];
   const sectionDurations: number[] = [];
@@ -849,4 +957,48 @@ async function ensureDefaultFontRegistered() {
   } catch (e) {
     console.warn('初始化默认字体失败，将继续使用系统回退字体:', e);
   }
+}
+
+// 通过分段信息生成最终视频（包含单图循环段与帧段）
+async function generateVideoFromSegments(
+  tempDir: string,
+  segments: { kind: 'frames' | 'loop'; startFrame?: number; frameCount?: number; imagePath?: string; duration?: number }[],
+  audioPath: string
+): Promise<string> {
+  const fps = 30;
+  const outputs: string[] = [];
+  let idx = 0;
+
+  for (const seg of segments) {
+    const out = path.join(tempDir, `segment_${String(idx).padStart(3, '0')}.mp4`);
+    if (seg.kind === 'frames') {
+      const start = seg.startFrame ?? 0;
+      const count = seg.frameCount ?? 0;
+      if (count > 0) {
+        const cmd = `${FFMPEG_PATH} -y -framerate ${fps} -start_number ${start} -i ${path.join(tempDir, 'frame_%06d.png')} -frames:v ${count} -pix_fmt yuv420p -c:v libx264 -r ${fps} "${out}"`;
+        await execAsync(cmd);
+        outputs.push(out);
+      }
+    } else {
+      const img = seg.imagePath!;
+      const dur = seg.duration ?? 0;
+      if (dur > 0) {
+        const cmd = `${FFMPEG_PATH} -y -loop 1 -t ${dur} -i "${img}" -pix_fmt yuv420p -c:v libx264 -r ${fps} "${out}"`;
+        await execAsync(cmd);
+        outputs.push(out);
+      }
+    }
+    idx++;
+  }
+
+  // 写入 concat 列表
+  const listPath = path.join(tempDir, 'segments.txt');
+  const list = outputs.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n');
+  await fs.promises.writeFile(listPath, list, 'utf-8');
+
+  const finalPath = path.join(tempDir, 'final_video.mp4');
+  const concatCmd = `${FFMPEG_PATH} -y -f concat -safe 0 -i "${listPath}" -i "${audioPath}" -c:v libx264 -pix_fmt yuv420p -r ${fps} -c:a aac -shortest "${finalPath}"`;
+  await execAsync(concatCmd);
+
+  return finalPath;
 }
