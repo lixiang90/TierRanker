@@ -440,18 +440,12 @@ export default function Home() {
       return;
     }
     
-    // 使用 sessionStorage 传递大数据，避免过长的 URL
+    // 使用 localStorage 传递大数据，避免过长的 URL，且跨标签/关闭仍可恢复
     try {
       const payload = JSON.stringify(rankingData);
-      sessionStorage.setItem('videoExportData', payload);
-      // 兼容新标签页打开的情况：同时写入 localStorage
-      try {
-        localStorage.setItem('videoExportData', payload);
-      } catch (lerr) {
-        console.warn('写入 localStorage 失败（将仅使用 sessionStorage）:', lerr);
-      }
+      localStorage.setItem('videoExportData', payload);
     } catch (e) {
-      console.warn('保存导出数据到 sessionStorage 失败，回退到 URL 传参:', e);
+      console.warn('保存导出数据到 localStorage 失败，回退到 URL 传参:', e);
       const dataParam = encodeURIComponent(JSON.stringify(rankingData));
       router.push(`/video-export?data=${dataParam}`);
       return;

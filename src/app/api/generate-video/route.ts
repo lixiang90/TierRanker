@@ -259,7 +259,7 @@ async function generateFrames(
     const itemFrames = Math.floor(itemDuration * fps);
     
     // 判断是否需要中心舞台动画（语音时间较长）
-    const needsCenterStage = itemDuration > 4; // 超过4秒的语音使用中心舞台动画
+    const needsCenterStage = itemDuration > 3; // 超过3秒的语音使用中心舞台动画
     
     // 计算目标位置信息
     const tier = rankingData.tiers.find(t => t.name === item.tierName);
@@ -508,7 +508,7 @@ async function drawMovingItemWithCenterStage(ctx: CanvasRenderingContext2D, item
   // 中心舞台位置
   const centerX = 960;
   const centerY = 400;
-  const centerSize = 150; // 放大的尺寸
+  const centerSize = 400; // 放大的尺寸（正常尺寸100的四倍）
   
   // 起始位置
   const startX = 960;
