@@ -118,7 +118,7 @@ interface PlacedItem {
 }
 
 // 配置请求体大小限制
-export const maxDuration = 300; // 5分钟超时
+export const maxDuration = 900; // 15分钟超时（需与 Vercel 计划支持相符）
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
