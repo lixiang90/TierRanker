@@ -52,6 +52,11 @@ function VideoExportContent() {
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [progressStage, setProgressStage] = useState<'audio' | 'frames' | 'mux' | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [estimatedTotalMs, setEstimatedTotalMs] = useState(0);
+  const timerRef = useRef<number | null>(null);
   const [audioMode, setAudioMode] = useState<'record' | 'tts' | 'upload'>('record');
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [selectedSpeaker, setSelectedSpeaker] = useState('default');
@@ -521,6 +526,17 @@ function VideoExportContent() {
     if (!rankingData) return;
     
     setIsGeneratingVideo(true);
+    // 初始化进度与计时
+    setProgressPercent(0);
+    setProgressStage('audio');
+    setElapsedMs(0);
+    setEstimatedTotalMs(estimateTotalMs());
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+    }
+    timerRef.current = window.setInterval(() => {
+      setElapsedMs(prev => prev + 500);
+    }, 500);
     
     try {
       console.log('使用 localStorage/base64 图片，跳过服务器临时文件上传');
@@ -566,8 +582,60 @@ function VideoExportContent() {
       alert('视频生成失败，请重试');
     } finally {
       setIsGeneratingVideo(false);
+      setProgressPercent(100);
+      setProgressStage(null);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
   };
+
+  // 估算总耗时（毫秒），用于进度条模拟
+  const estimateTotalMs = () => {
+    const fps = 30;
+    const getDurationFor = (section: AudioSection) => {
+      if (section.duration && section.duration > 0) return section.duration;
+      if (section.isTTS && section.text) return Math.max(2, section.text.length / 4);
+      return 3; // 保底时长
+    };
+    const intro = audioSections.find(s => s.type === 'intro');
+    const conclusion = audioSections.find(s => s.type === 'conclusion');
+    const items = audioSections.filter(s => s.type === 'item');
+    const introSec = intro ? getDurationFor(intro) : 3;
+    const conclusionSec = conclusion ? getDurationFor(conclusion) : 3;
+    const itemsSec = items.reduce((sum, s) => sum + getDurationFor(s), 0);
+    const totalVideoSec = introSec + itemsSec + conclusionSec;
+    const frameWorkSec = totalVideoSec; // 帧生成工作量按时长近似
+    const audioWorkSec = Math.max(5, totalVideoSec * 0.15); // 音频处理开销
+    const muxWorkSec = Math.max(8, totalVideoSec * 0.1); // 复用/编码开销
+    const totalSec = audioWorkSec + frameWorkSec + muxWorkSec;
+    return Math.round(totalSec * 1000);
+  };
+
+  // 根据耗时模拟进度阶段
+  useEffect(() => {
+    if (!isGeneratingVideo || estimatedTotalMs <= 0) return;
+    const percent = Math.min(99, Math.floor((elapsedMs / estimatedTotalMs) * 100));
+    setProgressPercent(percent);
+    if (percent < 20) {
+      setProgressStage('audio');
+    } else if (percent < 90) {
+      setProgressStage('frames');
+    } else {
+      setProgressStage('mux');
+    }
+  }, [elapsedMs, estimatedTotalMs, isGeneratingVideo]);
+
+  // 组件卸载时清理计时器
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
   
 
 
@@ -1216,6 +1284,27 @@ function VideoExportContent() {
                 <p className="text-sm text-gray-500 text-center">
                     请先为所有段落录制音频、生成语音或上传音频文件
                   </p>
+              )}
+
+              {/* 生成进度与计时 */}
+              {isGeneratingVideo && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>
+                      {progressStage === 'audio' && '处理音频...'}
+                      {progressStage === 'frames' && '生成帧...'}
+                      {progressStage === 'mux' && '合成视频...'}
+                    </span>
+                    <span>{formatMs(elapsedMs)}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 h-2 rounded">
+                    <div
+                      className="bg-red-500 h-2 rounded transition-all duration-300"
+                      style={{ width: `${progressPercent}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500">{progressPercent}%</div>
+                </div>
               )}
             </div>
           </div>
