@@ -135,9 +135,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { rankingData, audioSections } = await request.json() as {
+    const { rankingData, audioSections, title } = await request.json() as {
       rankingData: RankingData;
       audioSections: AudioSection[];
+      title?: string;
     };
 
     // 创建临时目录（Vercel 使用 /tmp，本地使用项目 temp）
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
     const { finalAudioPath: audioPath, sectionDurations } = await processAudio(audioSections, tempDir);
     
     // 基于精确音频时长生成视频帧与分段信息
-    const { segments } = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
+    const { segments } = await generateFrames(rankingData, audioSections, tempDir, sectionDurations, title);
     
     // 使用分段与 concat 拼接生成视频
     const videoPath = await generateVideoFromSegments(tempDir, segments, audioPath);
@@ -186,7 +187,8 @@ async function generateFrames(
   rankingData: RankingData,
   audioSections: AudioSection[],
   tempDir: string,
-  sectionDurations?: number[]
+  sectionDurations?: number[],
+  title?: string
 ): Promise<{ frameCount: number; segments: { kind: 'frames' | 'loop'; startFrame?: number; frameCount?: number; imagePath?: string; duration?: number }[] }> {
   const canvas = createCanvas(1920, 1080);
   const ctx = canvas.getContext('2d');
@@ -288,7 +290,7 @@ async function generateFrames(
       for (let f = 0; f < moveToCenterFrames; f++) {
         const progress = f / itemFrames;
         // 背景与已放置项目
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         const placedItemsByTier = new Map<string, PlacedItem[]>();
         for (let i = 0; i < itemIndex; i++) {
           const placedItem = allItems[i];
@@ -336,7 +338,7 @@ async function generateFrames(
       // 阶段2：中心定格（只渲染一次，生成单图循环段）
       if (stayAtCenterFrames > 0) {
         const progress = moveToCenterFrames / itemFrames; // 进入定格的首帧
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         const placedItemsByTier = new Map<string, PlacedItem[]>();
         for (let i = 0; i < itemIndex; i++) {
           const placedItem = allItems[i];
@@ -373,7 +375,7 @@ async function generateFrames(
       const moveToTargetStart = frameIndex;
       for (let f = 0; f < moveToTargetFrames; f++) {
         const progress = (moveToCenterFrames + stayAtCenterFrames + f) / itemFrames;
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         const placedItemsByTier = new Map<string, PlacedItem[]>();
         for (let i = 0; i < itemIndex; i++) {
           const placedItem = allItems[i];
@@ -408,7 +410,7 @@ async function generateFrames(
       const simpleMoveStart = frameIndex;
       for (let frame = 0; frame < itemFrames; frame++) {
         const progress = frame / itemFrames;
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         const placedItemsByTier = new Map<string, PlacedItem[]>();
         for (let i = 0; i < itemIndex; i++) {
           const placedItem = allItems[i];
@@ -447,7 +449,7 @@ async function generateFrames(
   const conclusionFrames = Math.floor(conclusionDuration * fps);
   const conclusionStart = frameIndex;
   for (let i = 0; i < conclusionFrames; i++) {
-    await drawCompleteTierTable(ctx, rankingData);
+    await drawCompleteTierTable(ctx, rankingData, title);
     await saveFrame(canvas, tempDir, frameIndex++);
   }
   segments.push({ kind: 'frames', startFrame: conclusionStart, frameCount: conclusionFrames });
@@ -468,7 +470,7 @@ const colorMap: { [key: string]: string } = {
   'bg-indigo-300': '#a5b4fc'
 };
 
-function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTier[]) {
+function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTier[], title?: string) {
   // 清空画布 - 使用浅灰色背景
   ctx.fillStyle = '#f3f4f6';
   ctx.fillRect(0, 0, 1920, 1080);
@@ -477,7 +479,7 @@ function drawBlankTierStructure(ctx: CanvasRenderingContext2D, tiers: RankingTie
   ctx.fillStyle = '#1f2937';
   ctx.font = 'bold 48px DefaultSans';
   ctx.textAlign = 'center';
-  ctx.fillText('从夯到拉排行榜', 960, 80);
+  ctx.fillText(title ?? '从夯到拉排行榜', 960, 80);
   
   // 绘制等级行
   const tierHeight = 120;
@@ -761,8 +763,8 @@ function drawMovingItemDefaultStyle(ctx: CanvasRenderingContext2D, item: Ranking
   ctx.fillText(item.name, x + size / 2, y + size / 2 + fontSize / 3);
 }
 
-async function drawCompleteTierTable(ctx: CanvasRenderingContext2D, rankingData: RankingData) {
-  drawBlankTierStructure(ctx, rankingData.tiers);
+async function drawCompleteTierTable(ctx: CanvasRenderingContext2D, rankingData: RankingData, title?: string) {
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
   
   // 绘制所有项目在其最终位置
   for (const [tierIndex, tier] of rankingData.tiers.entries()) {

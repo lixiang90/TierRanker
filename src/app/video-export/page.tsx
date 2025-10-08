@@ -529,6 +529,7 @@ function VideoExportContent() {
       // 准备发送到后端的数据
       const requestData = {
         rankingData: uploadedRankingData,
+        title,
         audioSections: await Promise.all(audioSections.map(async section => ({
           ...section,
           // 将audioBlob转换为base64
@@ -692,7 +693,7 @@ function VideoExportContent() {
   };
 
   // Canvas绘制函数
-  const drawBlankTierStructure = (ctx: CanvasRenderingContext2D, tiers: Tier[]) => {
+  const drawBlankTierStructure = (ctx: CanvasRenderingContext2D, tiers: Tier[], customTitle?: string) => {
     const canvas = ctx.canvas;
     const scale = canvas.width / 1920; // 缩放比例
     
@@ -704,7 +705,7 @@ function VideoExportContent() {
     ctx.fillStyle = '#1f2937';
     ctx.font = `bold ${48 * scale}px "Microsoft YaHei", "SimHei", Arial, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(title, canvas.width / 2, 80 * scale);
+    ctx.fillText(customTitle ?? title, canvas.width / 2, 80 * scale);
     
     // 绘制等级行
     const tierHeight = 120 * scale;
@@ -840,8 +841,8 @@ function VideoExportContent() {
     }
   };
 
-  const drawCompleteTierTable = async (ctx: CanvasRenderingContext2D, rankingData: RankingData) => {
-    drawBlankTierStructure(ctx, rankingData.tiers);
+  const drawCompleteTierTable = async (ctx: CanvasRenderingContext2D, rankingData: RankingData, customTitle?: string) => {
+    drawBlankTierStructure(ctx, rankingData.tiers, customTitle ?? title);
     
     // 绘制所有项目在其最终位置
     for (const tier of rankingData.tiers) {
@@ -866,10 +867,10 @@ function VideoExportContent() {
     
     switch (previewMode) {
       case 'blank':
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         break;
       case 'current':
-        drawBlankTierStructure(ctx, rankingData.tiers);
+        drawBlankTierStructure(ctx, rankingData.tiers, title);
         // 绘制当前段落对应的项目
         const currentAudioSection = audioSections[currentSection];
         if (currentAudioSection?.type === 'item' && currentAudioSection.itemId && currentAudioSection.tierName) {
@@ -882,7 +883,7 @@ function VideoExportContent() {
         }
         break;
       case 'complete':
-        await drawCompleteTierTable(ctx, rankingData);
+        await drawCompleteTierTable(ctx, rankingData, title);
         break;
     }
   };
