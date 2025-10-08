@@ -222,7 +222,7 @@ async function generateFrames(
   const introFrames = Math.floor(introDuration * fps);
   const introStart = frameIndex;
   for (let i = 0; i < introFrames; i++) {
-    drawBlankTierStructure(ctx, rankingData.tiers);
+    drawBlankTierStructure(ctx, rankingData.tiers, title);
     await saveFrame(canvas, tempDir, frameIndex++);
   }
   segments.push({ kind: 'frames', startFrame: introStart, frameCount: introFrames });
