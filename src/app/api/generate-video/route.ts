@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     const { finalAudioPath: audioPath, sectionDurations } = await processAudio(audioSections, tempDir);
     
     // 基于精确音频时长生成视频帧与分段信息
-    const { frameCount, segments } = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
+    const { segments } = await generateFrames(rankingData, audioSections, tempDir, sectionDurations);
     
     // 使用分段与 concat 拼接生成视频
     const videoPath = await generateVideoFromSegments(tempDir, segments, audioPath);
@@ -389,11 +389,10 @@ async function generateFrames(
             for (let indexInTier = 0; indexInTier < tierItems.length; indexInTier++) {
               const tierItem = tierItems[indexInTier];
               const placedItem = tierItem.item;
-              let x, y;
               const tierHeight = 120;
               const startY = 150;
-              y = startY + placedTierIndex * (tierHeight + 20);
-              x = 290 + indexInTier * 110;
+              const y = startY + placedTierIndex * (tierHeight + 20);
+              const x = 290 + indexInTier * 110;
               await drawItemInTier(ctx, placedItem, x, y + 10, 100, 100);
             }
           }
